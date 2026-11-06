@@ -122,6 +122,46 @@ Z=$(echo "$P" | J "d['zoom']")
 [ "$Z" = "0.85" ] || FAIL "prefs zoom → $Z"
 OK "tercihler saklandı ve geri geldi"
 
+say "password: değiştirme + eski parola geçersizleşir"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/password" -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"currentPassword":"yanlis-parola","newPassword":"yeni-passw0rd"}')
+[ "$CODE" = "401" ] || FAIL "wrong current password → $CODE"
+curl -sf -X POST "$BASE/api/auth/password" -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"currentPassword":"passw0rd123","newPassword":"yeni-passw0rd"}' > /dev/null
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"alice-$TS\",\"password\":\"passw0rd123\"}")
+[ "$CODE" = "401" ] || FAIL "old password still valid → $CODE"
+A_TOKEN=$(curl -sf -c /tmp/cj_a -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"alice-$TS\",\"password\":\"yeni-passw0rd\"}" | J "d['accessToken']")
+[ -n "$A_TOKEN" ] || FAIL "login with new password"
+OK "parola değişti; eski parola reddedildi, yenisi çalışıyor"
+
+say "avatar: yükle + indir + svg reddi"
+MYID=$(curl -sf "$BASE/api/me" -H "Authorization: Bearer $A_TOKEN" | J "d['id']")
+CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/users/$MYID/avatar" -H "Authorization: Bearer $A_TOKEN")
+[ "$CODE" = "204" ] || FAIL "avatar absent → $CODE (beklenen 204)"
+printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR' > /tmp/opencode/smoke-avatar.png
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/me/avatar" -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: image/png' --data-binary @/tmp/opencode/smoke-avatar.png)
+[ "$CODE" = "200" ] || FAIL "avatar upload → $CODE"
+GOT=$(curl -sf "$BASE/api/users/$MYID/avatar" -H "Authorization: Bearer $A_TOKEN" -o /tmp/opencode/smoke-avatar-out.png -w '%{content_type}')
+[ "$GOT" = "image/png" ] || FAIL "avatar content-type → $GOT"
+cmp -s /tmp/opencode/smoke-avatar.png /tmp/opencode/smoke-avatar-out.png || FAIL "avatar bytes differ"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/users/$MYID/avatar")
+[ "$CODE" = "401" ] || FAIL "avatar without auth → $CODE"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/me/avatar" -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: image/svg+xml' --data-binary '<svg onload="alert(1)"/>')
+[ "$CODE" = "400" ] || FAIL "svg avatar → $CODE"
+OK "png yüklendi/birebir indirildi; yokken 204; yetkisiz 401; svg 400"
+
+say "files: panoya görsel yükleme (board kapsamlı rota)"
+FID=$(curl -sf -X POST "$BASE/api/boards/$BID/files" -H "Authorization: Bearer $A_TOKEN" -F "file=@/tmp/opencode/smoke-avatar.png;filename=resim.png" | J "d['id']")
+[ -n "$FID" ] || FAIL "file upload"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/files/$FID" -H "Authorization: Bearer $A_TOKEN")
+[ "$CODE" = "200" ] || FAIL "file download → $CODE"
+CODE=$(curl -s -X POST "$BASE/api/files" -H "Authorization: Bearer $A_TOKEN" -F "file=@/tmp/opencode/smoke-avatar.png" -o /tmp/opencode/boardless.out -w '%{content_type}')
+case "$CODE" in text/html*) : ;; *) FAIL "boardless upload content-type → $CODE (beklenen: SPA html fallback)" ;; esac
+grep -q '"id"' /tmp/opencode/boardless.out && FAIL "boardless upload JSON döndü"
+OK "yükleme+indirme çalışıyor; panosuz yol artık API'ye gitmiyor (SPA fallback)"
+
 say "last board"
 curl -sf -X PUT "$BASE/api/me/last-board" -H "Authorization: Bearer $A_TOKEN" -H 'Content-Type: application/json' -d "{\"boardId\":$BID}" > /dev/null
 ME=$(curl -sf "$BASE/api/me" -H "Authorization: Bearer $A_TOKEN")

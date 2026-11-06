@@ -36,8 +36,10 @@ with sync_playwright() as p:
     check("empty board list note", page.locator(".board-empty").first.inner_text().find("henüz pano yok") >= 0)
 
     # ---------- create board ----------
-    page.once("dialog", lambda d: d.accept("Ev İşleri"))
     page.click('button[title="yeni pano"]')
+    page.wait_for_selector(".modal input.input", timeout=4000)
+    page.fill(".modal input.input", "Ev İşleri")
+    page.click(".modal .btn.primary")
     page.wait_for_selector(".board-item.active", timeout=8000)
     check("board created & active", "Ev İşleri" in page.locator(".board-item.active").inner_text())
     check("board title in header", "Ev İşleri" in page.locator(".board-title").inner_text())

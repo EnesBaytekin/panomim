@@ -48,8 +48,10 @@ with sync_playwright() as p:
 
     # ---------- A: register, create board, first node ----------
     register(page_a, USER_A)
-    page_a.once("dialog", lambda d: d.accept(BOARD))
     page_a.click('button[title="yeni pano"]')
+    page_a.wait_for_selector(".modal input.input", timeout=4000)
+    page_a.fill(".modal input.input", BOARD)
+    page_a.click(".modal .btn.primary")
     page_a.wait_for_selector(".board-item.active", timeout=8000)
     page_a.wait_for_selector(".empty-state", timeout=8000)
     page_a.click("button:has-text('İlk görevi ekle')")
@@ -160,7 +162,7 @@ with sync_playwright() as p:
     check("C: viewer role chip", "görüntüleyici" in page_c.locator(".board-title").inner_text())
     check("C: no 'add root' button for viewer", page_c.locator(".tree-add-root").count() == 0)
     hidden = page_c.evaluate(
-        "document.getElementById('mm-edit-toggle').style.display === 'none'")
+        "document.querySelector('.tb-mode')?.classList.contains('hidden') === true")
     check("C: edit-mode button hidden for viewer", hidden)
 
     # ---------- errors ----------
