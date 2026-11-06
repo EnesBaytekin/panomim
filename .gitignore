@@ -1,0 +1,18 @@
+# ikili dosyalar
+/todoer
+/todoer-*
+*.exe
+
+# veri
+*.db
+*.db-*
+/data/
+/dist/
+
+# ortam (sır içerebilir) — şablon (.env.example) takip edilir
+.env
+
+# python (test komut dosyaları)
+__pycache__/
+*.pyc
+.venv/
