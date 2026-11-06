@@ -38,10 +38,29 @@ Hazır şablon: [`.env.example`](.env.example) → `cp .env.example .env` yapıp
 
 Gereksinim: Docker + Docker Compose v2.
 
+`docker-compose.yml` hazır imajı (`todoer:latest`) çalıştırır; derleme için
+`./build.sh` kullanılır. Böylece imaj bir makinede derlenip kaynak kod
+olmadan başka makinelere taşınabilir.
+
 ```bash
-git clone <repo-url> todoer && cd todoer
-cp .env.example .env            # gerekirse düzenleyin
-docker compose up -d --build
+git clone <repo-url> todoer && cd todoer     # ya da kaynak kodlu herhangi bir kopya
+cp .env.example .env                          # gerekirse düzenleyin
+./build.sh                                    # todoer:latest imajını derler
+docker compose up -d                          # hazır imajı çalıştırır
+```
+
+Image adını değiştirmek için: `IMAGE=benim/todoer ./build.sh` ve `.env` dosyasına
+`TODOER_IMAGE=benim/todoer:latest` yazın.
+
+**Kod olmadan başka makineye kurulum:**
+
+```bash
+# imajı olan makinede:
+docker save todoer:latest | gzip > todoer-latest.tar.gz
+
+# hedef makinede (kaynak kod gerekmez; docker-compose.yml + .env yeterli):
+docker load < todoer-latest.tar.gz
+docker compose up -d
 ```
 
 - Varsayılan: `http://<sunucu>:8443` (ters proxy arkası senaryosu, `TODOER_HTTP=true`).
@@ -141,4 +160,4 @@ hash'iyle saklanır, geri okunamaz).
 çevrimdışıyken yapılan değişiklikler sonraki açılışta sunucudan tazelenir.
 
 **Güncelleme:** yeni sürümü derleyin/konteyneri yeniden kurun — veritabanı şeması
-otomatik göç ettirilir (`docker compose up -d --build`).
+otomatik göç ettirilir (`./build.sh && docker compose up -d`).

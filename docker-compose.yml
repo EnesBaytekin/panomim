@@ -1,7 +1,8 @@
 services:
   todoer:
-    build: .
-    image: todoer:latest
+    # hazır imaj kullanır (önce ./build.sh ile derleyin — bkz. KURULUM.md);
+    # farklı makinede: docker load < todoer-latest.tar.gz yeterli, kaynak kod gerekmez
+    image: ${TODOER_IMAGE:-todoer:latest}
     ports:
       - "8443:8443"
     volumes:
