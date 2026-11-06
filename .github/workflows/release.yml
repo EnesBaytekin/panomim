@@ -75,6 +75,9 @@ jobs:
 
             > Alan adı kullanacaksan önce DNS A kaydını ekle ve 80/443 portlarını aç.
 
+            **Güncelleme:** aynı script'i tekrar çalıştır — `sudo bash install.sh <alan-adiniz>`
+            yeni sürümü yükler ve servisi yeniden başlatır (veri korunur).
+
             ### İkili dosyalar
 
             | Dosya | Hedef |

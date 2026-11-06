@@ -1,13 +1,14 @@
 #!/usr/bin/env sh
 # Panomim — tek komutla kurulum.
 #
-# Kullanım:
-#   sudo bash install.sh panomim.puff.pet        # domain + Let's Encrypt (443)
+# Kullanım (kurulum ve güncelleme — aynı komut):
+#   sudo bash install.sh <alan-adiniz>            # domain + Let's Encrypt (443)
 #   sudo bash install.sh                          # domain'siz, self-signed (8443)
-#   VERSION=v1.0.0 sudo bash install.sh domain    # belirli sürüm (varsayılan: latest)
+#   VERSION=v1.0.0 sudo bash install.sh <alan>    # belirli sürüm (varsayılan: latest)
 #
 # Yapar: doğru mimariyi seçer → indirir → bütünlük kontrolü → binary'yi kurar →
-# panomim kullanıcısı + veri dizini + /etc/panomim/env + systemd servisi → başlatır.
+# panomim kullanıcısı + veri dizini + /etc/panomim/env + systemd servisi →
+# zaten kuruluysa yeni sürümü yükler ve servisi yeniden başlatır (günceller).
 set -eu
 
 DOMAIN="${1:-}"
@@ -94,11 +95,12 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 
-# 7) başlat
+# 7) başlat / güncelle (restart: kuruluysa yeniden başlatır, değilse başlatır)
 systemctl daemon-reload
-systemctl enable --now panomim
+systemctl enable panomim
+systemctl restart panomim
 
 echo
-echo "✓ panomim kuruldu → ${URL}"
+echo "✓ panomim kuruldu / güncellendi → ${URL}"
 echo "  durum: systemctl status panomim"
 echo "  log:   journalctl -u panomim -f"
