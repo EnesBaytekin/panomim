@@ -1,7 +1,15 @@
 // Field editor popover — shared by list view and mindmap.
-import { api } from './api.js';
+import { api, fileURL } from './api.js';
 import { el, popover, fmtDate, debounce, toast } from './ui.js';
 import { store, upsertNode, canEdit } from './store.js';
+
+/** img whose src resolves through the authenticated blob loader
+ *  (<img> can't send the bearer header, so direct /api/files src 401s). */
+function fileImg(fileId, cls, alt) {
+  const img = el('img' + (cls ? '.' + cls : ''), { alt, loading: 'lazy' });
+  fileURL(fileId).then(u => { if (u) img.src = u; });
+  return img;
+}
 
 const FIELD_TYPES = [
   ['text', '✎', 'Not'],
@@ -23,7 +31,7 @@ export function fieldChips(node, opts = {}) {
     .filter(f => !(opts.skipText && f.type === 'text'))
     .map(f => {
     if (f.type === 'image') {
-      return el('img.field-img', { src: `/api/files/${f.value}`, alt: 'görsel', loading: 'lazy' });
+      return fileImg(f.value, 'field-img', 'görsel');
     }
     let text = f.value;
     if (f.type === 'date') text = fmtDate(f.value);
@@ -72,7 +80,7 @@ function fieldRow(node, f, rerender) {
   let input;
   if (f.type === 'image') {
     input = el('div.field-image-edit',
-      el('img', { src: `/api/files/${f.value}`, alt: '' }),
+      fileImg(f.value, '', ''),
       canEdit() && el('button.btn.tiny.ghost', {
         onclick: async () => {
           if (await removeField(f)) rerender();
@@ -156,7 +164,7 @@ export async function pickAndUpload(nodeId) {
       const fd = new FormData();
       fd.append('file', file);
       try {
-        const res = await api.post(`/api/files`, fd);
+        const res = await api.post(`/api/boards/${store.board.board.id}/files`, fd);
         const f = await api.post(`/api/nodes/${nodeId}/fields`, { type: 'image', value: res.id });
         const n = store.nodes.get(nodeId);
         n.fields.push(f);

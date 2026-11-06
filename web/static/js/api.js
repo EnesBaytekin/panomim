@@ -27,6 +27,9 @@ export class Api {
     let payload;
     if (body instanceof FormData) {
       payload = body;
+    } else if (opts.raw) {
+      // caller-supplied bytes (ArrayBuffer/Blob/string); caller sets Content-Type
+      payload = body;
     } else if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
@@ -46,6 +49,7 @@ export class Api {
       throw err;
     }
     if (res.status === 204) return null;
+    if (opts.blob) return res.blob();
     return res.json();
   }
 
@@ -111,3 +115,23 @@ export class Api {
 }
 
 export const api = new Api();
+
+// Pano ekleri: <img> bearer başlığı taşıyamaz → fetch + objectURL, önbellekli.
+const fileURLs = new Map();    // fileId -> objectURL
+const fileFetches = new Map(); // fileId -> in-flight promise
+
+export function fileURL(fileId) {
+  if (!fileId) return Promise.resolve(null);
+  if (fileURLs.has(fileId)) return Promise.resolve(fileURLs.get(fileId));
+  if (fileFetches.has(fileId)) return fileFetches.get(fileId);
+  const p = api.req('GET', `/api/files/${fileId}`, undefined, { blob: true })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      fileURLs.set(fileId, url);
+      return url;
+    })
+    .catch(() => null)
+    .finally(() => fileFetches.delete(fileId));
+  fileFetches.set(fileId, p);
+  return p;
+}

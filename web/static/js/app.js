@@ -1,7 +1,7 @@
 // App shell: sidebar (boards), header (presence, actions), tabs, wiring.
 import { api } from './api.js';
-import { el, clear, toast, confirmDialog, avatar, popover, debounce } from './ui.js';
-import { store, on, emit, canEdit, myRole } from './store.js';
+import { el, clear, toast, confirmDialog, promptDialog, avatar, popover, debounce, forgetAvatar, getAvatarURL, fetchAvatar } from './ui.js';
+import { store, on, emit, canEdit, myRole, nodeChildren } from './store.js';
 import { initListView } from './listview.js';
 import * as mm from './mindmap.js';
 import { connectBoard, disconnect, resync } from './ws.js';
@@ -65,17 +65,21 @@ function buildShell() {
     el('button.tab', { dataset: { tab: 'mindmap' }, onclick: () => switchTab('mindmap') }, '✦ Zihin Haritası'),
   );
 
-  // mindmap toolbar (inside content, above canvas)
+  // mindmap toolbar (inside content, above canvas) — grouped so unrelated
+  // controls never dangle; each group hides wholly when it does not apply
   const toolbar = el('div.mm-toolbar', { id: 'mm-toolbar' },
-    el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, '✏️ Düzenle'),
-    el('span.toolbar-sep'),
-    el('button.btn.small.primary', { id: 'mm-add', onclick: () => mm.addNoteCentered() }, '+ Not'),
-    el('button.btn.small', { id: 'mm-add-child', onclick: () => mm.addChildToSelected() }, '+ Alt not'),
-    el('span.toolbar-sep'),
-    el('button.btn.small', { title: 'ekrana sığdır', onclick: () => mm.fit() }, '⤢ Sığdır'),
-    el('button.btn.small', { title: 'uzaklaştır', onclick: () => mm.zoomBy(1 / 1.2) }, '−'),
-    el('span.zoom-label', { id: 'mm-zoom-label' }, '100%'),
-    el('button.btn.small', { title: 'yaklaştır', onclick: () => mm.zoomBy(1.2) }, '+'),
+    el('span.tb-group.tb-mode', { dataset: { group: 'mode' } },
+      el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, '✏️ Düzenleme modu'),
+    ),
+    el('span.tb-group', { dataset: { group: 'actions' } },
+      el('button.btn.small.primary', { id: 'mm-add', title: 'yeni not ekle', onclick: () => mm.addNoteCentered() }, '+ Not'),
+    ),
+    el('span.tb-group', { dataset: { group: 'zoom' } },
+      el('button.btn.small', { title: 'uzaklaştır', onclick: () => mm.zoomBy(1 / 1.2) }, '−'),
+      el('button.zoom-label', { id: 'mm-zoom-label', title: '%100’e dön', onclick: () => mm.resetZoom() }, '100%'),
+      el('button.btn.small', { title: 'yaklaştır', onclick: () => mm.zoomBy(1.2) }, '+'),
+      el('button.btn.small', { title: 'ekrana sığdır', onclick: () => mm.fit() }, '⤢ Sığdır'),
+    ),
   );
   mm.bindToolbar({
     onModeChange: updateEditModeUI,
@@ -110,12 +114,87 @@ function canCreateBoards() { return !!store.user; }
 
 function userFoot() {
   const u = store.user;
-  return el('div.user-foot',
+  const chip = el('button.user-chip', { title: 'profil', onclick: e => profileMenu(e.currentTarget) },
     avatar({ userId: u.id, username: u.username }),
     el('span.user-name', null, u.username),
-    el('span.flex-spacer'),
-    el('button.icon-btn', { title: 'çıkış yap', onclick: doLogout }, '⏻'),
   );
+  return el('div.user-foot', chip);
+}
+
+// --- profile ----------------------------------------------------------------
+
+/** Bottom-left profile popover: photo, password change, logout. */
+function profileMenu(anchor) {
+  const u = store.user;
+  const { pop, close } = popover(anchor, { placement: 'top-start' });
+  const bigAvatar = avatar({ userId: u.id, username: u.username }, 'lg');
+  bigAvatar.title = 'fotoğraf yükle / değiştir';
+  const fileBtn = el('input', {
+    type: 'file',
+    accept: 'image/png,image/jpeg,image/gif,image/webp',
+    style: 'display:none',
+    onchange: async () => {
+      const file = fileBtn.files[0];
+      close();
+      if (!file) return;
+      if (file.size > 2 << 20) { toast('Fotoğraf en fazla 2 MB olabilir', 'error'); return; }
+      try {
+        const buf = await file.arrayBuffer();
+        const res = await api.req('PUT', '/api/me/avatar', buf, { raw: true, headers: { 'Content-Type': file.type || 'application/octet-stream' } });
+        forgetAvatar(u.id);
+        if (res.removed) return;
+        toast('Profil fotoğrafı güncellendi');
+        renderUserFoot();
+        renderPresence();
+      } catch (e) { toast(e.message, 'error'); }
+    },
+  });
+  bigAvatar.addEventListener('click', () => fileBtn.click());
+  pop.append(
+    el('div.profile-head', null, bigAvatar,
+      el('div.profile-id', null,
+        el('div.profile-name', null, u.username),
+        el('div.profile-sub', null, 'fotoğraf için tıkla'),
+      ),
+    ),
+    fileBtn,
+    el('button.menu-item', { onclick: () => { close(); passwordDialog(); } }, '🔑  Parola değiştir'),
+    el('button.menu-item', { onclick: () => { close(); doLogout(); } }, '⏻  Çıkış yap'),
+  );
+}
+
+function renderUserFoot() {
+  const foot = root?.querySelector('.sidebar-foot');
+  if (foot) { clear(foot); foot.append(userFoot()); }
+}
+
+/** Password change modal: current, new, confirm. */
+function passwordDialog() {
+  const cur = el('input.input', { type: 'password', placeholder: 'mevcut parola', autocomplete: 'current-password' });
+  const next = el('input.input', { type: 'password', placeholder: 'yeni parola (en az 8 karakter)', autocomplete: 'new-password' });
+  const again = el('input.input', { type: 'password', placeholder: 'yeni parola (tekrar)', autocomplete: 'new-password' });
+  const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } },
+    el('div.modal',
+      el('h3.modal-title', null, 'Parola değiştir'),
+      el('div.modal-field', null, cur, next, again),
+      el('div.modal-actions',
+        el('button.btn.ghost', { onclick: () => overlay.remove() }, 'Vazgeç'),
+        el('button.btn.primary', {
+          onclick: async () => {
+            if (next.value.length < 8) { toast('Yeni parola en az 8 karakter olmalı', 'error'); return; }
+            if (next.value !== again.value) { toast('Yeni parolalar eşleşmiyor', 'error'); return; }
+            try {
+              await api.post('/api/auth/password', { currentPassword: cur.value, newPassword: next.value });
+              overlay.remove();
+              toast('Parola güncellendi; diğer oturumlar kapatıldı');
+            } catch (e) { toast(e.message, 'error'); }
+          },
+        }, 'Kaydet'),
+      ),
+    ),
+  );
+  document.body.append(overlay);
+  cur.focus();
 }
 
 async function doLogout() {
@@ -173,10 +252,10 @@ function boardItem(b, currentId) {
 }
 
 async function newBoard() {
-  const name = prompt('Pano adı:');
-  if (!name?.trim()) return;
+  const name = await promptDialog({ title: 'Yeni pano', placeholder: 'pano adı', confirmText: 'Oluştur' });
+  if (!name) return;
   try {
-    const b = await api.post('/api/boards', { name: name.trim() });
+    const b = await api.post('/api/boards', { name });
     await loadBoards();
     openBoard(b.id);
     closeDrawer();
@@ -188,9 +267,18 @@ function boardMenu(anchor) {
   const b = store.board.board;
   const { pop, close } = popover(anchor);
   const owner = b.role === 'owner';
-  pop.append(
-    owner && el('button.menu-item', { onclick: async () => { close(); const n = prompt('Yeni ad:', b.name); if (n?.trim() && n.trim() !== b.name) { try { await api.patch(`/api/boards/${b.id}`, { name: n.trim() }); store.board.board.name = n.trim(); await loadBoards(); renderBoardHeader(); } catch (e) { toast(e.message, 'error'); } } } }, '✎  Yeniden adlandır'),
+  const items = [
+    owner && el('button.menu-item', { onclick: async () => {
+      close();
+      const n = await promptDialog({ title: 'Panoyu yeniden adlandır', value: b.name, confirmText: 'Kaydet' });
+      if (n && n !== b.name) {
+        try { await api.patch(`/api/boards/${b.id}`, { name: n }); store.board.board.name = n; await loadBoards(); renderBoardHeader(); }
+        catch (e) { toast(e.message, 'error'); }
+      }
+    } }, '✎  Yeniden adlandır'),
     el('button.menu-item', { onclick: () => { close(); openShareDialog(); } }, '👥  Paylaş'),
+    el('button.menu-item', { onclick: () => { close(); exportMarkdown(); } }, '⬇  Markdown dışa aktar'),
+    el('button.menu-item', { onclick: () => { close(); importMarkdown(); } }, '⬆  Markdown içe aktar'),
     el('button.menu-item', { onclick: async () => {
       close();
       if (owner) {
@@ -204,7 +292,92 @@ function boardMenu(anchor) {
       }
     } }, owner ? '🗑  Panoyu sil…' : '🚪  Panodan ayrıl…', owner ? '' : ''),
     !owner && el('span.menu-note', null, `rolün: ${b.role === 'editor' ? 'düzenleyici' : 'görüntüleyici'}`),
-  );
+  ].filter(Boolean); // koşullu öğeler false döner — append metne çevirir
+  pop.append(...items);
+}
+
+// --- markdown export / import -------------------------------------------------
+// Dışa aktarım: ağaç, iç içe madde işaretleri olarak yazılır (`- [x]` done).
+// İçe aktarım: aynı format ayrıştırılır; mevcut verilere dokunmadan her üst
+// seviye madde yeni bir kök not olarak eklenir.
+
+function mdEscape(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
+
+function exportMarkdown() {
+  const b = store.board?.board;
+  if (!b) return;
+  const lines = [];
+  const walk = (id, depth) => {
+    for (const n of nodeChildren(id)) {
+      lines.push(`${'  '.repeat(depth)}- [${n.done ? 'x' : ' '}] ${mdEscape(n.title)}`);
+      walk(n.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  if (!lines.length) { toast('Panoda aktarılacak not yok', 'error'); return; }
+  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/markdown;charset=utf-8' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: `${mdEscape(b.name) || 'pano'}.md` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+}
+
+async function importMarkdown() {
+  const b = store.board?.board;
+  if (!b) return;
+  if (!canEdit()) { toast('Bu panoda düzenleme yetkin yok', 'error'); return; }
+  const inp = el('input', { type: 'file', accept: '.md,.markdown,.txt,text/markdown,text/plain' });
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    const items = parseMarkdownOutline(await file.text());
+    if (!items.length) { toast('Dosyada ayrıştırılabilir madde bulunamadı', 'error'); return; }
+    let created = 0, failed = 0;
+    const walk = async (list, parentId, x, y) => {
+      let i = 0;
+      for (const it of list) {
+        try {
+          const node = await api.post(`/api/boards/${b.id}/nodes`, {
+            parentId, title: it.title.slice(0, 500), x: x + (parentId ? 250 : 0), y: y + i * 46,
+          });
+          created++;
+          if (it.done) {
+            try { await api.patch(`/api/nodes/${node.id}/done`, { done: true }); } catch {}
+          }
+          if (it.children.length) await walk(it.children, node.id, node.x, node.y - i * 0);
+        } catch { failed++; }
+        i++;
+      }
+    };
+    toast(`${items.length} kök madde içe aktarılıyor…`);
+    await walk(items, null, 60, 60);
+    await resync(); // single refresh: imported nodes land with server positions
+    toast(failed ? `${created} not eklendi, ${failed} başarısız` : `${created} not eklendi`, failed ? 'error' : 'ok');
+  };
+  inp.click();
+}
+
+/** Parse a markdown outline into {title, done, children[]} roots.
+ *  Understands -, *, +, numbered lists, [x]/[ ] checkboxes and # headings;
+ *  indentation (2 spaces or 1 tab per level) builds the hierarchy. */
+function parseMarkdownOutline(text) {
+  const roots = [];
+  const stack = [{ depth: -1, children: roots }];
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim() || raw.trim() === '---') continue;
+    const heading = raw.match(/^#{1,6}\s+(.*)$/);
+    const m = raw.match(/^(\s*)(?:[-*+]\s+|\d+[.)]\s+)?(.*)$/);
+    const title = mdEscape(heading ? heading[1] : m[2].replace(/^\[([ xX])\]\s*/, ''));
+    if (!title) continue;
+    const indent = heading ? 0 : m[1].replace(/\t/g, '  ').length;
+    const depth = Math.min(Math.floor(indent / 2), stack.length - 1);
+    const done = !heading && /^\s*[-*+]\s+\[[xX]\]/.test(raw);
+    while (stack.length > depth + 1) stack.pop();
+    const item = { title, done, children: [] };
+    stack[stack.length - 1].children.push(item);
+    stack.push({ depth, children: item.children });
+  }
+  return roots;
 }
 
 async function openBoard(id) {
@@ -299,15 +472,13 @@ function toggleEditMode() {
 function updateEditModeUI(on_ = store.editMode) {
   const btn = document.getElementById('mm-edit-toggle');
   const addBtn = document.getElementById('mm-add');
-  const addChildBtn = document.getElementById('mm-add-child');
   const editing = on_ && canEdit();
   if (btn) {
-    btn.textContent = editing ? '👁 Görüntüle' : '✏️ Düzenle';
+    btn.textContent = editing ? '👁 Görüntüleme modu' : '✏️ Düzenleme modu';
     btn.classList.toggle('active', editing);
-    btn.style.display = canEdit() ? '' : 'none';
+    btn.closest('.tb-group')?.classList.toggle('hidden', !canEdit());
   }
-  if (addBtn) addBtn.style.display = editing ? '' : 'none';
-  if (addChildBtn) addChildBtn.style.display = editing ? '' : 'none';
+  addBtn?.closest('.tb-group')?.classList.toggle('hidden', !editing);
 }
 
 // --- presence -------------------------------------------------------------------
@@ -317,7 +488,16 @@ function renderPresence() {
   const users = [...store.presence.values()];
   const shown = users.slice(0, 5);
   for (const u of shown) {
-    presenceEl.append(el('span.presence-avatar', { style: `--c:${u.color}`, title: u.username }, u.username.slice(0, 2).toUpperCase()));
+    const chip = el('span.presence-avatar', { style: `--c:${u.color}`, title: u.username }, u.username.slice(0, 2).toUpperCase());
+    if (u.userId != null) {
+      // profile photo when available (ui.js fetches & caches blobs)
+      const url = getAvatarURL(u.userId);
+      if (url) { chip.classList.add('photo'); chip.style.backgroundImage = `url(${url})`; chip.textContent = ''; }
+      else fetchAvatar(u.userId).then(p => {
+        if (p && chip.isConnected) { chip.classList.add('photo'); chip.style.backgroundImage = `url(${p})`; chip.textContent = ''; }
+      });
+    }
+    presenceEl.append(chip);
   }
   if (users.length > 5) {
     presenceEl.append(el('span.presence-more', { title: users.map(u => u.username).join(', ') }, '+', users.length - 5));

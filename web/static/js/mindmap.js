@@ -49,6 +49,10 @@ export function setEditMode(v, { silent } = {}) {
   viewport?.classList.toggle('viewing', !editMode);
   for (const n of notesLayer?.children ?? []) {
     n.classList.toggle('editable', editMode);
+    // rebuild content so the note tools exist ONLY in edit mode — otherwise
+    // they would be invisible yet still clickable in view mode
+    const node = store.nodes.get(Number(n.dataset.id));
+    if (node) renderNoteContent(n, node);
   }
   renderEdges();
   if (!silent) emitToolbar();
@@ -129,6 +133,7 @@ function buildNote(node) {
   renderNoteContent(n, node);
   n.classList.toggle('editable', editMode && canEdit());
   n.classList.toggle('done', !!node.done);
+  n.classList.toggle('sized', !!node.h);
   // auto-measure height for CSS-only height
   requestAnimationFrame(() => { if (!store.nodes.get(node.id)?.h) autoSize(n, node); });
   return n;
@@ -155,17 +160,18 @@ function renderNoteContent(n, node) {
     }, '✓'),
     el('div.note-title', null, noteMainText(node)),
     el('span.note-tools', null,
-      // buttons exist whenever the user can edit; visibility is CSS-gated by
-      // .note.editable (edit mode) so toggling edit mode needs no rebuild
-      canEdit() && el('button.note-btn', {
+      // tools exist only while edit mode is ON (and the user may edit);
+      // setEditMode rebuilds note content on toggle so they never linger
+      // invisibly under view mode
+      store.editMode && canEdit() && el('button.note-btn', {
         title: 'alt not ekle',
         onclick: e => { e.stopPropagation(); addChildNote(store.nodes.get(node.id) || node); },
       }, '+'),
-      canEdit() && el('button.note-btn', {
+      store.editMode && canEdit() && el('button.note-btn', {
         title: 'alan ekle / düzenle',
         onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); },
       }, '◫'),
-      canEdit() && el('button.note-btn', {
+      store.editMode && canEdit() && el('button.note-btn', {
         title: 'menü',
         onclick: e => { e.stopPropagation(); noteMenu(store.nodes.get(node.id) || node, e.currentTarget); },
       }, '⋯'),
@@ -222,6 +228,7 @@ function tiltOf(id) {
 
 function updateNoteEl(elNode, node) {
   elNode.setAttribute('style', noteStyle(node));
+  elNode.classList.toggle('sized', !!node.h);
   elNode.classList.toggle('done', !!node.done);
   elNode.classList.toggle('editable', editMode && canEdit());
   // don't clobber in-note editing (rename input etc.)
@@ -692,7 +699,8 @@ async function addChildNote(parent) {
 
 function noteMenu(node, anchor) {
   const { pop, close } = openPop(anchor);
-  pop.append(
+  const kids = nodeChildren(node.id).length;
+  const items = [
     menuItem('✎  Yeniden adlandır', () => renameNote(node, close)),
     menuItem('＋  Alt not ekle', () => { close(); addChildNote(node); }),
     menuItem('◫  Alanlar', () => { close(); openFieldEditor(node.id, anchor); }),
@@ -702,11 +710,50 @@ function noteMenu(node, anchor) {
       try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 })); }
       catch (e) { toast(e.message, 'error'); }
     }),
-    menuItem('🗑  Sil…', async () => {
+    kids
+      ? menuItem('🗑  Bu notu ve alt notlarını sil…', async () => {
+        close();
+        await deleteNoteFlow(node);
+      }, 'danger')
+      : menuItem('🗑  Sil…', async () => {
+        close();
+        await deleteNoteFlow(node);
+      }, 'danger'),
+    kids > 0 && menuItem('🗑  Sadece bu notu sil…', async () => {
       close();
-      await deleteNoteFlow(node);
+      await deleteOnlyNote(node, false);
     }, 'danger'),
-  );
+    kids > 0 && menuItem('🗑  Bu notu sil, alt notları kök yap', async () => {
+      close();
+      await deleteOnlyNote(node, true);
+    }, 'danger'),
+  ];
+  pop.append(...items.filter(Boolean)); // koşullu öğeler false döner — append metne çevirir
+}
+
+/** Delete just this note: children are reattached to its parent or made roots. */
+async function deleteOnlyNote(node, toRoot) {
+  const kids = nodeChildren(node.id);
+  const parent = node.parentId ? store.nodes.get(node.parentId) : null;
+  const dest = toRoot
+    ? `${kids.length} alt notu kök not yapılacak`
+    : `${kids.length} alt notu “${parent?.title || 'kök'}” düzeyine bağlanacak`;
+  const ok = await confirmDialog({
+    title: 'Not silinsin mi?',
+    body: `“${node.title || 'başlıksız'}” silinecek; ${dest}.`,
+    confirmText: 'Sil',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const targetParent = toRoot ? 0 : (node.parentId ?? 0);
+    for (const k of kids) {
+      const upd = await api.patch(`/api/nodes/${k.id}`, { parentId: targetParent });
+      upsertNode(upd);
+    }
+    await api.del(`/api/nodes/${node.id}`);
+    removeNodes([node.id]);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 function openPop(anchor) {
@@ -836,6 +883,12 @@ function emitToolbar() { toolbarApi?.onModeChange?.(editMode); }
 export function zoomBy(factor) {
   const vp = viewport.getBoundingClientRect();
   zoomAt(vp.left + vp.width / 2, vp.top + vp.height / 2, factor);
+}
+
+/** Reset zoom to 100% around the viewport center. */
+export function resetZoom() {
+  const vp = viewport.getBoundingClientRect();
+  zoomAt(vp.left + vp.width / 2, vp.top + vp.height / 2, 1 / zoom);
 }
 
 export function fit() { fitToContent(true); }

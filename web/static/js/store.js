@@ -37,8 +37,15 @@ export function upsertNode(node) {
   // Mutate in place: live views (drag handlers, menus) keep references to the
   // store object, so replacing it would leave them editing a detached copy.
   const cur = store.nodes.get(node.id);
-  if (cur) Object.assign(cur, node);
-  else store.nodes.set(node.id, node);
+  if (cur) {
+    // payloads without a fields array (or fields:null) must not wipe the
+    // locally known field list
+    const fields = Array.isArray(node.fields) ? node.fields : cur.fields;
+    Object.assign(cur, node);
+    cur.fields = fields ?? [];
+  } else {
+    store.nodes.set(node.id, { fields: [], ...node });
+  }
   emit('nodes', 'update:' + node.id);
 }
 

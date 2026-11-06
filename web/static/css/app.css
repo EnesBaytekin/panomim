@@ -74,10 +74,11 @@
   --hover: rgba(235, 215, 180, 0.07);
   --active-soft: rgba(224, 138, 99, 0.14);
 
-  --note-sat: 30%;
-  --note-lum: 27%;
-  --note-ink: #f1e7d4;
-  --note-line: rgba(0, 0, 0, 0.35);
+  /* notlar her temada aynı kağıt renginde (aynı doygunluk/açıklık) */
+  --note-sat: 66%;
+  --note-lum: 88%;
+  --note-ink: #453622;
+  --note-line: rgba(90, 65, 25, 0.18);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 14px -4px rgba(0, 0, 0, 0.5);
@@ -340,7 +341,23 @@ select.input { cursor: pointer; }
 .board-empty { font-size: 12.5px; color: var(--ink-soft); padding: 4px 10px 8px; }
 
 .sidebar-foot { border-top: 1px solid var(--line); }
-.user-foot { display: flex; align-items: center; gap: 9px; padding: 11px 14px; }
+.user-foot { display: flex; align-items: center; padding: 8px 10px; }
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.user-chip:hover { background: var(--hover); }
 .user-name {
   font-weight: 600;
   font-size: 14px;
@@ -360,6 +377,25 @@ select.input { cursor: pointer; }
   flex: none;
 }
 .avatar.md { width: 30px; height: 30px; font-size: 12px; }
+.avatar.lg { width: 46px; height: 46px; font-size: 17px; cursor: pointer; }
+.avatar.photo,
+.presence-avatar.photo {
+  background-size: cover;
+  background-position: center;
+  color: transparent;
+}
+
+/* profil popover başlığı */
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 6px 12px 10px;
+  margin: -4px -4px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.profile-name { font-weight: 700; font-size: 14px; }
+.profile-sub { font-size: 11px; color: var(--ink-soft); }
 
 /* --- content head ------------------------------------------------------------------ */
 
@@ -782,6 +818,8 @@ a.field-chip:hover { color: var(--accent); }
 .modal-title { font-size: 17px; font-weight: 750; margin-bottom: 12px; }
 .modal-body { color: var(--ink-soft); margin-bottom: 6px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.modal-field { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.modal-field .input { width: 100%; }
 
 .share-add { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .share-add .input { width: auto; min-width: 130px; }
@@ -895,12 +933,28 @@ a.field-chip:hover { color: var(--accent); }
   z-index: 2;
 }
 [data-theme="dark"] .note::before {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.08);
+  /* bant da açık temayla aynı */
+  background: rgba(255, 255, 255, 0.5);
+  border-color: rgba(90, 65, 25, 0.10);
 }
 .note.remote-selected { box-shadow: 0 0 0 2.5px var(--remote-color, var(--accent)), var(--shadow-note); }
-.note.done .note-title { text-decoration: line-through; opacity: .62; }
-.note.done { filter: saturate(.72); }
+/* done: net biçimde "yapıldı" — soluk + doygunluğu düşük kağıt, üstü çizili başlık, köşede damga */
+.note.done .note-title { text-decoration: line-through; opacity: .55; }
+.note.done { filter: saturate(.3) contrast(.92); opacity: .75; }
+.note.done::after {
+  content: '✓';
+  position: absolute;
+  right: 12px;
+  bottom: 2px;
+  font-size: 46px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--ok);
+  opacity: .5;
+  transform: rotate(-14deg);
+  pointer-events: none;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .4);
+}
 
 .note-desc {
   padding: 1px 12px 4px 35px;
@@ -962,6 +1016,7 @@ a.field-chip:hover { color: var(--accent); }
 [data-theme="dark"] .note-title-edit { background: rgba(0, 0, 0, 0.3); }
 .note-title-edit:focus { outline: none; }
 
+.note:not(.editable) .note-tools { display: none; } /* asla görünmez-tıklanır kalmasın */
 .note-tools {
   display: flex;
   gap: 2px;
@@ -998,7 +1053,33 @@ a.field-chip:hover { color: var(--accent); }
   color: inherit;
   max-width: 100%;
 }
-.note-fields .field-img { max-height: 90px; }
+/* image fields hug the note paper; a user-resized (sized) note scales them */
+.note-fields { flex-wrap: wrap; }
+.note-fields .field-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid var(--note-line);
+  box-shadow: none;
+}
+.note.sized { display: flex; flex-direction: column; }
+.note.sized .note-head,
+.note.sized .note-desc { flex: none; }
+.note.sized .note-fields {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+}
+.note.sized .field-img {
+  max-height: 100%;
+  width: auto;
+  object-fit: contain;
+  margin: 0 auto;
+}
 
 .note-resize {
   display: none;
@@ -1075,15 +1156,30 @@ a.field-chip:hover { color: var(--accent); }
   backdrop-filter: blur(8px);
   box-shadow: var(--shadow-md);
 }
-.toolbar-sep { flex: none; width: 1px; height: 18px; background: var(--line-strong); margin: 0 2px; }
+/* groups keep their controls together and wrap as whole units */
+.tb-group { display: flex; align-items: center; gap: 4px; flex: none; white-space: nowrap; }
+.tb-group.hidden { display: none; }
+.tb-group .btn { flex: none; }
+.tb-group.tb-mode .btn { font-weight: 700; border-width: 1.5px; background: var(--panel-2); }
+.tb-group.tb-mode .btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .zoom-label {
-  min-width: 40px;
+  flex: none;
+  min-width: 42px;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
   text-align: center;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
+.zoom-label:hover { color: var(--ink); }
 
 /* --- color picker -------------------------------------------------------------------------------------- */
 
@@ -1185,7 +1281,7 @@ a.field-chip:hover { color: var(--accent); }
 
   .list-view { padding: 12px 12px 60px; }
 
-  .mm-toolbar { top: 8px; left: 8px; padding: 5px 6px; gap: 4px; }
+  .mm-toolbar { top: 8px; left: 8px; padding: 5px 6px; gap: 4px; max-width: calc(100% - 16px); }
   .zoom-label { min-width: 34px; }
 }
 
