@@ -1,12 +1,7 @@
 name: release
 
-# vX.X.X tag'i push edilince o sürüm için GitHub Release oluşturur
-# (linux amd64 / arm64 / armv7 statik binary'leri + SHA256SUMS).
-#
-# Kullanım:
-#   git tag v0.1.0
-#   git push origin v0.1.0
-# → GitHub'da Actions çalışır, Releases altında v0.1.0 + ikili dosyalar belirir.
+# vX.X.X tag'i push edilince o sürüm için GitHub Release oluşturur:
+# bare statik binary'ler (amd64/arm64/armv7) + install.sh + SHA256SUMS.
 
 on:
   push:
@@ -44,22 +39,43 @@ jobs:
           set -eu
           mkdir -p dist
           build() {
-            os="$1"; arch="$2"; suffix="${3:-}"
-            name="panomim-${os}-${arch}${suffix:+-${suffix}}"
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOARM="${suffix}" \
-              go build -trimpath -ldflags="-s -w" -o "dist/${name}" ./cmd/panomim
-            tar -C dist -czf "dist/${name}.tar.gz" "${name}"
-            rm "dist/${name}"
+            os="$1"; arch="$2"; goarm="$3"; out="$4"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOARM="$goarm" \
+              go build -trimpath -ldflags="-s -w" -o "dist/$out" ./cmd/panomim
           }
-          build linux amd64
-          build linux arm64
-          build linux arm 7
-          cd dist && sha256sum ./*.tar.gz > SHA256SUMS
+          build linux amd64 "" panomim-linux-amd64
+          build linux arm64 "" panomim-linux-arm64
+          build linux arm 7 panomim-linux-armv7
+          cp scripts/install.sh dist/install.sh
+          chmod +x dist/install.sh
+          cd dist && sha256sum panomim-linux-* > SHA256SUMS
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.tar.gz
+            dist/panomim-linux-*
+            dist/install.sh
             dist/SHA256SUMS
-          generate_release_notes: true
+          body: |
+            ## Kurulum
+
+            ARM Debian sunucuda tek komutla kur:
+
+            ```bash
+            curl -fsSL https://github.com/EnesBaytekin/panomim/releases/download/${{ github.ref_name }}/install.sh -o install.sh
+            sudo bash install.sh panomim.puff.pet
+            ```
+
+            > Öncesinde DNS A kaydını (`panomim.puff.pet → sunucu IP`) ekle ve 80/443 portlarını aç.
+
+            Domain'siz (self-signed) kurmak için: `sudo bash install.sh`
+
+            ### İkili dosyalar
+
+            | Dosya | Hedef |
+            |---|---|
+            | `panomim-linux-arm64` | ARM 64-bit (aarch64) |
+            | `panomim-linux-amd64` | x86_64 |
+            | `panomim-linux-armv7` | ARM 32-bit |
+            | `SHA256SUMS` | bütünlük kontrolü |
