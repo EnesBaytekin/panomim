@@ -159,7 +159,7 @@ function profileMenu(anchor) {
     ),
     fileBtn,
     el('button.menu-item', { onclick: () => { close(); passwordDialog(); } }, '🔑  Parola değiştir'),
-    el('button.menu-item', { onclick: () => { close(); doLogout(); } }, '⏻  Çıkış yap'),
+    el('button.menu-item', { onclick: () => { close(); doLogout(); } }, '🚪  Çıkış yap'),
   );
 }
 

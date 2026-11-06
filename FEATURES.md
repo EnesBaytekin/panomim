@@ -7,16 +7,16 @@
 - [x] Sürümlü migration sistemi (ALTER TABLE + backfill desteği) — commit `4bd951f`
 - [x] `feat/improvements` branch açıldı
 
-## Faz 1 — Not kağıdı görünümü (mindmap)
-- [ ] 1.1 Başlık tam genişlikte word-wrap; butonlar üstte overlay (float), tüm yüksekliği kaplamaz, başlığı sıkıştırmaz
-- [ ] 1.2 Not boyutu içerikle otomatik büyür; en küçük boyut içeriği kapsar (içerikten küçük kalınamaz)
-- [ ] 1.3 Varsayılan not şekli = kare (yazı rahat sığacak boyut)
-- [ ] 1.4 "+" butonu alan ekle/düzenle panelini açsın; alan-ekle butonunun simgesi "+" olsun; "alt not ekle" 3-nokta menüsüne taşınsın (farklı simge)
-- [ ] 1.5 Alanlar ekleme sırasına göre tek listede (text/image/date/… karışık), sürükle-bırak ile sıralama; hepsi tek not içinde
+## Faz 1 — Not kağıdı görünümü (mindmap) ✅
+- [x] 1.1 Başlık tam genişlikte word-wrap; butonlar üstte overlay (float), tüm yüksekliği kaplamaz, başlığı sıkıştırmaz
+- [x] 1.2 Not boyutu içerikle otomatik büyür; en küçük boyut içeriği kapsar (içerikten küçük kalınamaz)
+- [x] 1.3 Varsayılan not şekli = kare (yazı rahat sığacak boyut)
+- [x] 1.4 "+" butonu alan ekle/düzenle panelini açsın; alan-ekle butonunun simgesi "+" olsun; "alt not ekle" 3-nokta menüsüne taşınsın (farklı simge)
+- [x] 1.5 Alanlar ekleme sırasına göre tek listede (text/image/date/… karışık), sürükle-bırak ile sıralama; hepsi tek not içinde
 
-## Faz 2 — Mobil düzeltmeler
-- [ ] 2.1 Mobilde "not ekle" → alan/textarea + klavye açılmıyor → düzelt
-- [ ] 2.2 Profil → "çıkış yap" ikonu mobil hamburger menüde görünmüyor → düzelt
+## Faz 2 — Mobil düzeltmeler ✅
+- [x] 2.1 Mobilde "not ekle" → alan/textarea + klavye açılmıyor → düzelt (senkron focus; mindmap'te eklenen not otomatik başlık düzenlemeye geçer)
+- [x] 2.2 Profil → "çıkış yap" ikonu mobil hamburger menüde görünmüyor → düzelt (⏻ → 🚪)
 
 ## Faz 3 — Profil görseli + aktif kullanıcılar
 - [ ] 3.1 Profil resmine tıkla → sayfa içi büyük popup + "düzenle" (resim seç)

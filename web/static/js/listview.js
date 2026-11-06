@@ -136,7 +136,9 @@ function titleEditor(node) {
     placeholder: 'ne yapılacak?',
     onclick: e => e.stopPropagation(),
   });
-  requestAnimationFrame(() => { input.focus(); input.select(); });
+  // Focused synchronously by focusEditor() right after render() attaches the
+  // input — a deferred rAF/setTimeout focus does not open the soft keyboard on
+  // mobile (especially iOS), which made "add note" look broken there.
   const commit = async () => {
     const val = input.value.trim();
     const id = node.id;
@@ -175,6 +177,15 @@ function startEdit(nodeId) {
   editingId = nodeId;
   editingIsNew = false;
   render();
+  focusEditor();
+}
+
+/** Focus the active inline editor (called right after render, synchronously). */
+function focusEditor() {
+  const input = rootEl?.querySelector('.tree-edit');
+  if (!input) return;
+  try { input.focus({ preventScroll: true }); } catch { input.focus(); }
+  try { input.select(); } catch { /* no-op */ }
 }
 
 /** Create a new root and open it for editing. */
@@ -189,6 +200,7 @@ async function createRoot() {
     editingId = node.id;
     editingIsNew = true;
     render();
+    focusEditor();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -206,6 +218,7 @@ async function addChild(parent) {
     editingIsNew = true;
     setCollapsed(parent.id, false);
     render();
+    focusEditor();
   } catch (e) { toast(e.message, 'error'); }
 }
 

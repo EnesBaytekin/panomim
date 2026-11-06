@@ -741,6 +741,8 @@ export async function createNote({ x, y, parentId } = {}) {
       setCollapsed(parentId, false);
     }
     selectedId = node.id;
+    // open the title input right away so "add note" is immediately typeable
+    startTitleEdit(node);
     return node;
   } catch (e) {
     toast(e.message, 'error');
@@ -843,12 +845,20 @@ function menuItem(label, fn, cls = '') {
 
 function renameNote(node, closeMenu) {
   closeMenu();
+  startTitleEdit(node);
+}
+
+/** Open an inline title input on a note and focus it (used by rename and by
+ *  "add note", so a newly created note is immediately typeable). */
+function startTitleEdit(node) {
   const noteEl = notesLayer.querySelector(`.note[data-id="${node.id}"]`);
   if (!noteEl) return;
   const titleEl = noteEl.querySelector('.note-title');
+  if (!titleEl) return;
   const input = el('input.note-title-edit', { value: node.title });
   titleEl.replaceWith(input);
-  input.focus(); input.select();
+  try { input.focus({ preventScroll: true }); } catch { input.focus(); }
+  input.select();
   const commit = async () => {
     const val = input.value.trim();
     if (val && val !== node.title) {
