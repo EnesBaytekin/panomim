@@ -54,6 +54,48 @@ func (s *Store) UserByID(id int64) (*User, error) {
 	return u, err
 }
 
+// PasswordHashByID returns the stored argon2 hash for verification.
+func (s *Store) PasswordHashByID(userID int64) (string, error) {
+	var hash string
+	err := s.DB.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrBadCredentials
+	}
+	return hash, err
+}
+
+// SetPassword replaces the user's password hash (parola değiştirme).
+func (s *Store) SetPassword(userID int64, hash string) error {
+	_, err := s.DB.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, hash, userID)
+	return err
+}
+
+// SetAvatar stores the profile photo bytes (nil data removes it).
+func (s *Store) SetAvatar(userID int64, mime string, data []byte) error {
+	if data == nil {
+		_, err := s.DB.Exec(`DELETE FROM user_avatars WHERE user_id = ?`, userID)
+		return err
+	}
+	_, err := s.DB.Exec(`INSERT INTO user_avatars (user_id, mime, data, updated_at) VALUES (?,?,?,?)
+		ON CONFLICT(user_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, updated_at = excluded.updated_at`,
+		userID, mime, data, time.Now().Unix())
+	return err
+}
+
+// Avatar returns the stored profile photo; ErrBadCredentials when absent.
+func (s *Store) Avatar(userID int64) (string, []byte, error) {
+	var mime string
+	var data []byte
+	err := s.DB.QueryRow(`SELECT mime, data FROM user_avatars WHERE user_id = ?`, userID).Scan(&mime, &data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, ErrBadCredentials
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	return mime, data, nil
+}
+
 func (s *Store) SetLastBoard(userID, boardID int64) error {
 	_, err := s.DB.Exec(`UPDATE users SET last_board_id = ? WHERE id = ?`, boardID, userID)
 	return err

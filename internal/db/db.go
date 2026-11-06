@@ -137,6 +137,14 @@ var migrations = []string{
 		updated_at INTEGER NOT NULL,
 		PRIMARY KEY (user_id, board_id)
 	)`,
+
+	// 7 — profile photos (profil fotoğrafı, ayrı tablo: idempotent kurulum)
+	`CREATE TABLE IF NOT EXISTS user_avatars (
+		user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		mime       TEXT NOT NULL,
+		data       BLOB NOT NULL,
+		updated_at INTEGER NOT NULL
+	)`,
 }
 
 // Now returns the current unix time used for all timestamp columns.

@@ -38,6 +38,9 @@ func Router(d Deps) http.Handler {
 	mux.Handle("POST /api/auth/login", rateLimit(http.HandlerFunc(d.Auth.Login)))
 	mux.Handle("POST /api/auth/refresh", rateLimit(http.HandlerFunc(d.Auth.Refresh)))
 	mux.Handle("POST /api/auth/logout", rateLimit(http.HandlerFunc(d.Auth.Logout)))
+	mux.Handle("POST /api/auth/password", rateLimit(d.Auth.RequireAuth(http.HandlerFunc(d.Auth.ChangePassword))))
+	mux.Handle("PUT /api/me/avatar", d.Auth.RequireAuth(http.HandlerFunc(d.Auth.PutAvatar)))
+	mux.Handle("GET /api/users/{userID}/avatar", d.Auth.RequireAuth(http.HandlerFunc(d.Auth.GetAvatar)))
 
 	// --- authenticated API ---
 	authed := func(pattern string, h http.Handler) {
@@ -69,7 +72,7 @@ func Router(d Deps) http.Handler {
 	authed("POST /api/nodes/{nodeID}/fields", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.CreateField)))
 	authed("PATCH /api/fields/{fieldID}", fieldAcc(RoleEditor)(http.HandlerFunc(d.Nodes.PatchField)))
 	authed("DELETE /api/fields/{fieldID}", fieldAcc(RoleEditor)(http.HandlerFunc(d.Nodes.DeleteField)))
-	authed("POST /api/files", board(RoleEditor)(http.HandlerFunc(d.Nodes.Upload)))
+	authed("POST /api/boards/{boardID}/files", board(RoleEditor)(http.HandlerFunc(d.Nodes.Upload)))
 	authed("GET /api/files/{fileID}", d.Nodes.FileAccess(RoleViewer)(http.HandlerFunc(d.Nodes.ServeFile)))
 
 	// --- realtime ---

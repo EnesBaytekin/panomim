@@ -68,8 +68,24 @@ func (s *Store) Node(nodeID int64) (*Node, error) {
 		n.Hue = &v
 	}
 	n.Done = done != 0
+	// Attach fields so single-node responses (create/patch/done/reparent)
+	// always carry the full note — previously "fields": [] told clients to
+	// wipe their local chip lists until the next full reload.
 	n.Fields = []Field{}
-	return n, nil
+	frows, err := s.DB.Query(`SELECT id, node_id, type, value, position
+		FROM node_fields WHERE node_id = ? ORDER BY position, id`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer frows.Close()
+	for frows.Next() {
+		var f Field
+		if err := frows.Scan(&f.ID, &f.NodeID, &f.Type, &f.Value, &f.Position); err != nil {
+			return nil, err
+		}
+		n.Fields = append(n.Fields, f)
+	}
+	return n, frows.Err()
 }
 
 // ListByBoard returns every node of a board (flat; clients build the tree),
