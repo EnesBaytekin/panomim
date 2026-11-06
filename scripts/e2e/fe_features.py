@@ -136,7 +136,7 @@ with sync_playwright() as p:
     page.click(".color-swatches .swatch >> nth=2")
     time.sleep(0.4)
     hue = page.eval_on_selector(".note:has-text('Süt ve Ekmek')", "e => getComputedStyle(e).getPropertyValue('--hue')")
-    check("color applied", hue.strip() not in ("", "45"), f"hue={hue}")
+    check("color applied", hue.strip() not in ("", "35"), f"hue={hue}")
 
     # ---------- 6b. toolbar grupları + %100 sıfırlama + görüntüleme modu + silme seçenekleri ----------
     zlb = page.locator("#mm-zoom-label")
@@ -183,7 +183,7 @@ with sync_playwright() as p:
     page.click('button[title="tema değiştir"]')
     time.sleep(0.2)
     lum_l = page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--note-lum').trim()")
-    check("note color same across themes", lum_d == lum_l == "88%", f"dark={lum_d} light={lum_l}")
+    check("note color same across themes", lum_d == lum_l == "78%", f"dark={lum_d} light={lum_l}")
 
     # ---------- 7. description via text field; empty field hidden ----------
     n2 = ".note:has-text('Süt ve Ekmek')"

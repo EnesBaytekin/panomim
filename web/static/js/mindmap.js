@@ -814,7 +814,7 @@ function colorPicker(node, closeMenu) {
     [null, ...NOTE_PALETTE].map(h =>
       el('button.swatch', {
         class: 'swatch' + ((node.hue ?? null) === h ? ' active' : ''),
-        style: h == null ? 'background:var(--note-default)' : `background:hsl(${h} 70% 78%)`,
+        style: h == null ? 'background:var(--note-default)' : `background:hsl(${h} var(--note-sat) var(--note-lum))`,
         dataset: { hue: h ?? '' },
         title: h == null ? 'varsayılan' : `ton ${h}`,
         onclick: async () => {
@@ -832,14 +832,14 @@ function colorPicker(node, closeMenu) {
     oninput: e => {
       swatches.querySelectorAll('.swatch.active').forEach(s => s.classList.remove('active'));
       const h = Number(e.target.value);
-      colorPreview.style.background = `hsl(${h} 70% 78%)`;
+      colorPreview.style.background = `hsl(${h} var(--note-sat) var(--note-lum))`;
     },
     onchange: async e => {
       try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { hue: Number(e.target.value) })); close(); }
       catch (err) { toast(err.message, 'error'); }
     },
   });
-  const colorPreview = el('span.hue-preview', { style: `background:hsl(${node.hue ?? 35} 70% 78%)` });
+  const colorPreview = el('span.hue-preview', { style: `background:hsl(${node.hue ?? 35} var(--note-sat) var(--note-lum))` });
   pop.append(el('div.pop-title', null, 'Renk'), swatches,
     el('div.hue-row', null, slider, colorPreview));
 }
