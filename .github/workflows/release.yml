@@ -60,16 +60,20 @@ jobs:
           body: |
             ## Kurulum
 
-            ARM Debian sunucuda tek komutla kur:
+            Tek komutla kur (mimari otomatik tespit edilir):
 
             ```bash
             curl -fsSL https://github.com/EnesBaytekin/panomim/releases/download/${{ github.ref_name }}/install.sh -o install.sh
-            sudo bash install.sh panomim.puff.pet
+            sudo bash install.sh <alan-adiniz>   # Let's Encrypt HTTPS (443)
             ```
 
-            > Öncesinde DNS A kaydını (`panomim.puff.pet → sunucu IP`) ekle ve 80/443 portlarını aç.
+            Domain'siz, sadece IP:port ile (self-signed HTTPS) kurmak için:
 
-            Domain'siz (self-signed) kurmak için: `sudo bash install.sh`
+            ```bash
+            sudo bash install.sh   # → https://<sunucu-ip>:8443
+            ```
+
+            > Alan adı kullanacaksan önce DNS A kaydını ekle ve 80/443 portlarını aç.
 
             ### İkili dosyalar
 
