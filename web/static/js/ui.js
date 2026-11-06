@@ -1,5 +1,6 @@
 // Tiny DOM + UI helpers.
 import { api } from './api.js';
+import { t } from './i18n.js';
 
 /** Create element: el('div.note', {onclick}, children...)
  *  Tolerant: if the 2nd argument is not a plain attrs object (e.g. an element),
@@ -77,7 +78,7 @@ export function toast(msg, kind = 'info') {
 }
 
 /** Confirmation modal; resolves true/false. opts = {title, body, confirmText, danger} */
-export function confirmDialog({ title, body, confirmText = 'Tamam', danger = false }) {
+export function confirmDialog({ title, body, confirmText = t('common.ok'), danger = false }) {
   return new Promise(resolve => {
     const close = val => { overlay.remove(); resolve(val); };
     const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) close(false); } },
@@ -85,7 +86,7 @@ export function confirmDialog({ title, body, confirmText = 'Tamam', danger = fal
         el('h3.modal-title', null, title),
         body && el('div.modal-body', null, body),
         el('div.modal-actions',
-          el('button.btn.ghost', { onclick: () => close(false) }, 'Vazgeç'),
+          el('button.btn.ghost', { onclick: () => close(false) }, t('common.cancel')),
           el(`button.btn.${danger ? 'danger' : 'primary'}`, { onclick: () => close(true) }, confirmText),
         ),
       ),
@@ -133,7 +134,7 @@ export function debounce(fn, ms) {
 
 /** Small form modal with a single text input; resolves the string or null.
  *  Replaces browser prompt() for board naming etc. */
-export function promptDialog({ title, label, placeholder = '', value = '', confirmText = 'Tamam' } = {}) {
+export function promptDialog({ title, label, placeholder = '', value = '', confirmText = t('common.ok') } = {}) {
   return new Promise(resolve => {
     const close = val => { overlay.remove(); resolve(val); };
     const input = el('input.input', { type: 'text', placeholder, value, maxlength: 120 });
@@ -144,7 +145,7 @@ export function promptDialog({ title, label, placeholder = '', value = '', confi
         label && el('div.modal-body', null, label),
         el('div.modal-field', null, input),
         el('div.modal-actions',
-          el('button.btn.ghost', { onclick: () => close(null) }, 'Vazgeç'),
+          el('button.btn.ghost', { onclick: () => close(null) }, t('common.cancel')),
           el('button.btn.primary', { onclick: submit }, confirmText),
         ),
       ),

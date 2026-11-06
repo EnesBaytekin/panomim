@@ -6,6 +6,7 @@ import { el, toast, confirmDialog, colorForUser, debounce } from './ui.js';
 import { store, on, nodeChildren, canEdit, isDescendant, setCollapsed, upsertNode, removeNodes } from './store.js';
 import { fieldElement, openFieldEditor, pickAndUpload } from './fields.js';
 import { sendSelect } from './ws.js';
+import { t } from './i18n.js';
 
 const NOTE_W = 220;          // default note width (square side)
 const MIN_W = 150, MAX_W = 420;
@@ -147,7 +148,7 @@ function renderNoteContent(n, node) {
   const head = el('div.note-head', null,
     el('button.note-check', {
       class: 'note-check' + (node.done ? ' done' : ''),
-      title: node.done ? 'yapılmadı' : 'yapıldı',
+      title: node.done ? t('mm.markUndone') : t('mm.markDone'),
       onclick: async e => {
         e.stopPropagation();
         const cur = store.nodes.get(node.id) || node; // never trust a stale copy
@@ -163,11 +164,11 @@ function renderNoteContent(n, node) {
       // setEditMode rebuilds note content on toggle so they never linger
       // invisibly under view mode
       store.editMode && canEdit() && el('button.note-btn', {
-        title: 'alan ekle / düzenle',
+        title: t('mm.editFields'),
         onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); },
       }, '+'),
       store.editMode && canEdit() && el('button.note-btn', {
-        title: 'menü',
+        title: t('mm.menu'),
         onclick: e => { e.stopPropagation(); noteMenu(store.nodes.get(node.id) || node, e.currentTarget); },
       }, '⋯'),
     ),
@@ -178,8 +179,8 @@ function renderNoteContent(n, node) {
   if (body) n.append(body);
 
   // handles are always present; CSS reveals them only in edit mode
-  n.append(el('div.note-resize', { title: 'boyutlandır' }));
-  n.append(el('div.note-link', { title: 'buradan tutup başka nota bağla' }, '⛓'));
+  n.append(el('div.note-resize', { title: t('mm.resize') }));
+  n.append(el('div.note-link', { title: t('mm.relink') }, '⛓'));
 }
 
 function noteTitleField(node) {
@@ -210,7 +211,7 @@ function noteBodyEl(node) {
   const draggable = editMode && canEdit();
   const items = fields.map(f => {
     const grip = draggable
-      ? el('span.field-grip', { draggable: 'true', title: 'sırayı değiştir (sürükle)' }, '⠿')
+      ? el('span.field-grip', { draggable: 'true', title: t('mm.reorder') }, '⠿')
       : null;
     return el('div.field-item', { dataset: { fieldId: f.id } }, grip, fieldElement(f));
   });
@@ -761,29 +762,29 @@ function noteMenu(node, anchor) {
   const { pop, close } = openPop(anchor);
   const kids = nodeChildren(node.id).length;
   const items = [
-    menuItem('✎  Yeniden adlandır', () => renameNote(node, close)),
-    menuItem('↳  Alt not ekle', () => { close(); addChildNote(node); }),
-    menuItem('◫  Alanlar', () => { close(); openFieldEditor(node.id, anchor); }),
-    menuItem('🎨  Renk', () => colorPicker(node, close)),
-    node.parentId != null && menuItem('☁  Kök yap', async () => {
+    menuItem(t('mm.rename'), () => renameNote(node, close)),
+    menuItem(t('mm.addChild'), () => { close(); addChildNote(node); }),
+    menuItem(t('mm.fields'), () => { close(); openFieldEditor(node.id, anchor); }),
+    menuItem(t('mm.color'), () => colorPicker(node, close)),
+    node.parentId != null && menuItem(t('mm.makeRoot'), async () => {
       close();
       try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 })); }
       catch (e) { toast(e.message, 'error'); }
     }),
     kids
-      ? menuItem('🗑  Bu notu ve alt notlarını sil…', async () => {
+      ? menuItem(t('mm.deleteSubtree'), async () => {
         close();
         await deleteNoteFlow(node);
       }, 'danger')
-      : menuItem('🗑  Sil…', async () => {
+      : menuItem(t('mm.delete'), async () => {
         close();
         await deleteNoteFlow(node);
       }, 'danger'),
-    kids > 0 && menuItem('🗑  Sadece bu notu sil…', async () => {
+    kids > 0 && menuItem(t('mm.deleteOnly'), async () => {
       close();
       await deleteOnlyNote(node, false);
     }, 'danger'),
-    kids > 0 && menuItem('🗑  Bu notu sil, alt notları kök yap', async () => {
+    kids > 0 && menuItem(t('mm.deleteKeepChildren'), async () => {
       close();
       await deleteOnlyNote(node, true);
     }, 'danger'),
@@ -796,12 +797,12 @@ async function deleteOnlyNote(node, toRoot) {
   const kids = nodeChildren(node.id);
   const parent = node.parentId ? store.nodes.get(node.parentId) : null;
   const dest = toRoot
-    ? `${kids.length} alt notu kök not yapılacak`
-    : `${kids.length} alt notu “${parent?.title || 'kök'}” düzeyine bağlanacak`;
+    ? t('mm.toRoot', { n: kids.length })
+    : t('mm.toParent', { n: kids.length, parent: parent?.title || t('mm.root') });
   const ok = await confirmDialog({
-    title: 'Not silinsin mi?',
-    body: `“${node.title || 'başlıksız'}” silinecek; ${dest}.`,
-    confirmText: 'Sil',
+    title: t('mm.deleteTitle'),
+    body: t('mm.deleteBody', { title: node.title || t('list.untitled'), dest }),
+    confirmText: t('common.delete'),
     danger: true,
   });
   if (!ok) return;
@@ -884,7 +885,7 @@ function colorPicker(node, closeMenu) {
         class: 'swatch' + ((node.hue ?? null) === h ? ' active' : ''),
         style: h == null ? 'background:var(--note-default)' : `background:hsl(${h} var(--note-sat) var(--note-lum))`,
         dataset: { hue: h ?? '' },
-        title: h == null ? 'varsayılan' : `ton ${h}`,
+        title: h == null ? t('mm.defaultColor') : t('mm.hue', { h }),
         onclick: async () => {
           try {
             const patch = h == null ? { clearHue: true } : { hue: h };
@@ -908,7 +909,7 @@ function colorPicker(node, closeMenu) {
     },
   });
   const colorPreview = el('span.hue-preview', { style: `background:hsl(${node.hue ?? 35} var(--note-sat) var(--note-lum))` });
-  pop.append(el('div.pop-title', null, 'Renk'), swatches,
+  pop.append(el('div.pop-title', null, t('mm.colorTitle')), swatches,
     el('div.hue-row', null, slider, colorPreview));
 }
 
@@ -918,11 +919,11 @@ async function deleteNoteFlow(node) {
   const countAll = list => list.reduce((acc, k) => acc + 1 + countAll(nodeChildren(k.id)), 0);
   if (count > 0) count = countAll(kids);
   const ok = await confirmDialog({
-    title: 'Not silinsin mi?',
+    title: t('mm.deleteTitle'),
     body: count > 0
-      ? `“${node.title || 'başlıksız'}” ve bağlı ${count} alt notu birlikte silinecek.`
-      : `“${node.title || 'başlıksız'}” silinecek.`,
-    confirmText: count > 0 ? 'Hepsini sil' : 'Sil',
+      ? t('mm.deleteSubtreeBody', { title: node.title || t('list.untitled'), n: count })
+      : t('mm.deleteSingleBody', { title: node.title || t('list.untitled') }),
+    confirmText: count > 0 ? t('list.deleteAll') : t('common.delete'),
     danger: true,
   });
   if (!ok) return;

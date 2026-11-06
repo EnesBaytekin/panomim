@@ -29,9 +29,9 @@
 - [x] 4.4 Modal/overlay panel yapısı (arka karartma, focus, dışına tıklayınca kapan)
 
 ## Faz 5 — i18n (TR/EN)
-- [ ] 5.1 Dil altyapısı (sözlük + dil state)
-- [ ] 5.2 Tüm metinleri TR/EN çevir
-- [ ] 5.3 Dil + tema seçici login ekranında (giriş öncesi)
+- [x] 5.1 Dil altyapısı (sözlük + dil state)
+- [x] 5.2 Tüm metinleri TR/EN çevir
+- [x] 5.3 Dil + tema seçici login ekranında (giriş öncesi)
 
 ## Bitiş
 - [ ] Tüm fazlar commit + push (yalnızca EnesBaytekin adına, atıf yok)

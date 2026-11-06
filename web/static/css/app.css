@@ -182,6 +182,7 @@ img { max-width: 100%; }
 }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
 .icon-btn.tiny { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+.icon-btn.lang-btn { width: auto; padding: 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
 
 .link {
   background: none;
@@ -248,6 +249,14 @@ select.input { cursor: pointer; }
   gap: 12px;
   text-align: center;
   animation: rise .25s ease-out;
+  position: relative;
+}
+.auth-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
 }
 .auth-form { display: flex; flex-direction: column; gap: 10px; text-align: left; margin-top: 6px; }
 .form-error { color: var(--danger); font-size: 13px; min-height: 18px; }

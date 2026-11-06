@@ -2,6 +2,7 @@
 import { api, fileURL } from './api.js';
 import { el, popover, fmtDate, debounce, toast } from './ui.js';
 import { store, upsertNode, canEdit } from './store.js';
+import { t } from './i18n.js';
 
 /** img whose src resolves through the authenticated blob loader
  *  (<img> can't send the bearer header, so direct /api/files src 401s). */
@@ -12,12 +13,12 @@ function fileImg(fileId, cls, alt) {
 }
 
 const FIELD_TYPES = [
-  ['text', '✎', 'Not'],
-  ['date', '📅', 'Tarih'],
-  ['time', '🕑', 'Saat'],
-  ['datetime', '📅', 'Tarih & Saat'],
-  ['link', '🔗', 'Bağlantı'],
-  ['image', '🖼', 'Görsel'],
+  ['text', '✎', 'field.note'],
+  ['date', '📅', 'field.date'],
+  ['time', '🕑', 'field.time'],
+  ['datetime', '📅', 'field.datetime'],
+  ['link', '🔗', 'field.link'],
+  ['image', '🖼', 'field.image'],
 ];
 
 const iconOf = t => (FIELD_TYPES.find(f => f[0] === t) || ['?', '•'])[1];
@@ -31,7 +32,7 @@ export function fieldChips(node, opts = {}) {
     .filter(f => !(opts.skipText && f.type === 'text'))
     .map(f => {
     if (f.type === 'image') {
-      return fileImg(f.value, 'field-img', 'görsel');
+      return fileImg(f.value, 'field-img', t('field.imageAlt'));
     }
     let text = f.value;
     if (f.type === 'date') text = fmtDate(f.value);
@@ -54,7 +55,7 @@ export function fieldElement(f) {
     return el('div.note-desc-line', null, f.value);
   }
   if (f.type === 'image') {
-    return fileImg(f.value, 'field-img', 'görsel');
+    return fileImg(f.value, 'field-img', t('field.imageAlt'));
   }
   let text = f.value;
   if (f.type === 'date') text = fmtDate(f.value);
@@ -76,7 +77,7 @@ export function openFieldEditor(nodeId, anchor) {
     if (!n) { close(); return; }
     clear(pop);
     pop.append(
-      el('div.pop-title', null, 'Alanlar'),
+      el('div.pop-title', null, t('field.fieldsTitle')),
       el('div.fields-list', null, n.fields.map(f => fieldRow(n, f, rerender))),
       addRow(n, rerender),
     );
@@ -103,7 +104,7 @@ function fieldRow(node, f, rerender) {
         onclick: async () => {
           if (await removeField(f)) rerender();
         },
-      }, 'Kaldır'),
+      }, t('field.remove')),
     );
   } else {
     const type = f.type === 'datetime' ? 'datetime-local' : f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : f.type === 'link' ? 'url' : 'text';
@@ -122,7 +123,7 @@ function fieldRow(node, f, rerender) {
     el('span.field-icon', null, iconOf(f.type)),
     input,
     canEdit() && f.type !== 'image' && el('button.icon-btn.tiny', {
-      title: 'Alanı sil', onclick: async () => { if (await removeField(f)) rerender(); },
+      title: t('field.deleteField'), onclick: async () => { if (await removeField(f)) rerender(); },
     }, '✕'),
   );
 }
@@ -150,7 +151,7 @@ function applyFieldLocal(nf) {
 function addRow(node, rerender) {
   if (!canEdit()) return null;
   const sel = el('select.input.small', null,
-    FIELD_TYPES.map(([v, , label]) => el('option', { value: v }, label)));
+    FIELD_TYPES.map(([v, , label]) => el('option', { value: v }, t(label))));
   return el('div.field-add',
     sel,
     el('button.btn.small.primary', {
@@ -169,7 +170,7 @@ function addRow(node, rerender) {
           rerender();
         } catch (e) { toast(e.message, 'error'); }
       },
-    }, '+ Ekle'),
+    }, t('field.add')),
   );
 }
 
