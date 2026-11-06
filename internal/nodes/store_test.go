@@ -144,6 +144,38 @@ func TestFields(t *testing.T) {
 	}
 }
 
+func TestReorderFields(t *testing.T) {
+	s := testSetup(t)
+	n, _ := s.Create(1, nil, "n", 0, 0)
+	f1, _ := s.CreateField(n.ID, "text", "a")
+	f2, _ := s.CreateField(n.ID, "image", "file-1")
+	f3, _ := s.CreateField(n.ID, "text", "b")
+
+	// reorder f3, f1, f2
+	got, err := s.ReorderFields(n.ID, []int64{f3.ID, f1.ID, f2.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int64{f3.ID, f1.ID, f2.ID}
+	if len(got.Fields) != 3 {
+		t.Fatalf("fields = %d, want 3", len(got.Fields))
+	}
+	for i, f := range got.Fields {
+		if f.ID != want[i] {
+			t.Fatalf("order[%d] = %d, want %d", i, f.ID, want[i])
+		}
+	}
+
+	// a duplicate id must be rejected
+	if _, err := s.ReorderFields(n.ID, []int64{f1.ID, f1.ID, f2.ID}); err != ErrBadOrder {
+		t.Fatalf("duplicate ids: got %v, want ErrBadOrder", err)
+	}
+	// a missing id must be rejected
+	if _, err := s.ReorderFields(n.ID, []int64{f1.ID, f2.ID}); err != ErrBadOrder {
+		t.Fatalf("missing id: got %v, want ErrBadOrder", err)
+	}
+}
+
 func strPtr(s string) *string    { return &s }
 func boolPtr(b bool) *bool       { return &b }
 func fPtr(f float64) *float64    { return &f }

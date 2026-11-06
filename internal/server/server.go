@@ -70,6 +70,7 @@ func Router(d Deps) http.Handler {
 	authed("PATCH /api/nodes/{nodeID}", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.Patch)))
 	authed("DELETE /api/nodes/{nodeID}", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.Delete)))
 	authed("POST /api/nodes/{nodeID}/fields", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.CreateField)))
+	authed("POST /api/nodes/{nodeID}/fields/order", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.ReorderFields)))
 	authed("PATCH /api/fields/{fieldID}", fieldAcc(RoleEditor)(http.HandlerFunc(d.Nodes.PatchField)))
 	authed("DELETE /api/fields/{fieldID}", fieldAcc(RoleEditor)(http.HandlerFunc(d.Nodes.DeleteField)))
 	authed("POST /api/boards/{boardID}/files", board(RoleEditor)(http.HandlerFunc(d.Nodes.Upload)))

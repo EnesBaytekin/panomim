@@ -4,12 +4,12 @@
 import { api } from './api.js';
 import { el, toast, confirmDialog, colorForUser, debounce } from './ui.js';
 import { store, on, nodeChildren, canEdit, isDescendant, setCollapsed, upsertNode, removeNodes } from './store.js';
-import { fieldChips, openFieldEditor, pickAndUpload } from './fields.js';
+import { fieldElement, openFieldEditor, pickAndUpload } from './fields.js';
 import { sendSelect } from './ws.js';
 
-const NOTE_W = 220;          // default note width
+const NOTE_W = 220;          // default note width (square side)
 const MIN_W = 150, MAX_W = 420;
-const MIN_H = 60, MAX_H = 560;
+const MIN_H = 220, MAX_H = 560; // min height = square default; never below content
 
 let viewport = null;  // the clipping container (gets pointer events)
 let canvas = null;    // transformed world (notes + svg)
@@ -133,7 +133,6 @@ function buildNote(node) {
   renderNoteContent(n, node);
   n.classList.toggle('editable', editMode && canEdit());
   n.classList.toggle('done', !!node.done);
-  n.classList.toggle('sized', !!node.h);
   // auto-measure height for CSS-only height
   requestAnimationFrame(() => { if (!store.nodes.get(node.id)?.h) autoSize(n, node); });
   return n;
@@ -164,13 +163,9 @@ function renderNoteContent(n, node) {
       // setEditMode rebuilds note content on toggle so they never linger
       // invisibly under view mode
       store.editMode && canEdit() && el('button.note-btn', {
-        title: 'alt not ekle',
-        onclick: e => { e.stopPropagation(); addChildNote(store.nodes.get(node.id) || node); },
-      }, '+'),
-      store.editMode && canEdit() && el('button.note-btn', {
         title: 'alan ekle / düzenle',
         onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); },
-      }, '◫'),
+      }, '+'),
       store.editMode && canEdit() && el('button.note-btn', {
         title: 'menü',
         onclick: e => { e.stopPropagation(); noteMenu(store.nodes.get(node.id) || node, e.currentTarget); },
@@ -179,34 +174,96 @@ function renderNoteContent(n, node) {
   );
   n.append(head);
 
-  const desc = noteDesc(node);
-  if (desc) n.append(desc);
-
-  const chips = noteFieldsRow(node);
-  if (chips) n.append(chips);
+  const body = noteBodyEl(node);
+  if (body) n.append(body);
 
   // handles are always present; CSS reveals them only in edit mode
   n.append(el('div.note-resize', { title: 'boyutlandır' }));
   n.append(el('div.note-link', { title: 'buradan tutup başka nota bağla' }, '⛓'));
 }
 
+function noteTitleField(node) {
+  if (node.title) return null;
+  return node.fields.find(f => f.type === 'text' && (f.value || '').trim()) || null;
+}
+
 function noteMainText(node) {
-  if (node.title) return node.title;
-  const t = node.fields.find(f => f.type === 'text' && (f.value || '').trim());
-  return t ? t.value : '';
+  return node.title || (noteTitleField(node)?.value || '');
 }
 
-function noteDesc(node) {
-  const texts = node.fields.filter(f => f.type === 'text' && (f.value || '').trim());
-  const rest = node.title ? texts : texts.slice(1);
-  if (!rest.length) return null;
-  return el('div.note-desc', null, rest.map(f => el('div.note-desc-line', null, f.value)));
+/** Fields shown in the note body, in add-order (position order), excluding the
+ *  field that stands in for the title when the title is empty. Empty text
+ *  fields render nothing. */
+function noteBodyFields(node) {
+  const title = noteTitleField(node);
+  return node.fields.filter(f =>
+    f !== title && (f.type !== 'text' || (f.value || '').trim())
+  );
 }
 
-function noteFieldsRow(node) {
-  const others = node.fields.filter(f => f.type !== 'text');
-  if (!others.length) return null;
-  return el('div.note-fields', null, fieldChips({ ...node, fields: others }));
+/** Render the note's fields as one ordered list (text / image / chip mixed),
+ *  with drag-to-reorder in edit mode. */
+function noteBodyEl(node) {
+  const fields = noteBodyFields(node);
+  if (!fields.length) return null;
+  const list = el('div.note-fields');
+  const draggable = editMode && canEdit();
+  const items = fields.map(f => {
+    const grip = draggable
+      ? el('span.field-grip', { draggable: 'true', title: 'sırayı değiştir (sürükle)' }, '⠿')
+      : null;
+    return el('div.field-item', { dataset: { fieldId: f.id } }, grip, fieldElement(f));
+  });
+  list.append(...items);
+
+  if (draggable) {
+    let dragId = null;
+    for (const item of items) {
+      const grip = item.querySelector('.field-grip');
+      grip.addEventListener('dragstart', e => {
+        dragId = Number(item.dataset.fieldId);
+        item.classList.add('dragging');
+        try { e.dataTransfer.setData('text/plain', String(dragId)); } catch { /* Safari */ }
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      grip.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
+        dragId = null;
+      });
+      item.addEventListener('dragover', e => {
+        if (dragId == null) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
+        item.classList.add('drag-over');
+      });
+      item.addEventListener('drop', async e => {
+        e.preventDefault();
+        const targetId = Number(item.dataset.fieldId);
+        list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
+        if (dragId == null || targetId === dragId) return;
+        await reorderFields(node, dragId, targetId);
+      });
+    }
+  }
+  return list;
+}
+
+/** Move field `dragId` to just before `targetId` and persist the new order. */
+async function reorderFields(node, dragId, targetId) {
+  const cur = store.nodes.get(node.id) || node;
+  const ids = cur.fields.map(f => f.id);
+  const from = ids.indexOf(dragId);
+  if (from < 0) return;
+  const moved = ids.splice(from, 1)[0];
+  const to = ids.indexOf(targetId);
+  if (to < 0) return;
+  ids.splice(to, 0, moved);
+  try {
+    const updated = await api.post(`/api/nodes/${node.id}/fields/order`, { ids });
+    upsertNode(updated);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 function noteStyle(node) {
@@ -215,7 +272,7 @@ function noteStyle(node) {
     `left:${node.x}px`,
     `top:${node.y}px`,
     `width:${node.w || NOTE_W}px`,
-    node.h ? `height:${node.h}px` : '',
+    node.h ? `min-height:${node.h}px` : '',
     hue != null ? `--hue:${hue}` : '',
     `--tilt:${tiltOf(node.id)}deg`,
   ].filter(Boolean).join(';');
@@ -228,7 +285,6 @@ function tiltOf(id) {
 
 function updateNoteEl(elNode, node) {
   elNode.setAttribute('style', noteStyle(node));
-  elNode.classList.toggle('sized', !!node.h);
   elNode.classList.toggle('done', !!node.done);
   elNode.classList.toggle('editable', editMode && canEdit());
   // don't clobber in-note editing (rename input etc.)
@@ -257,7 +313,7 @@ function noteBox(node) {
   const m = noteSizes.get(node.id) || {};
   return {
     cx: node.x + (node.w || m.w || NOTE_W) / 2,
-    cy: node.y + (node.h || m.h || 120) / 2,
+    cy: node.y + (node.h || m.h || 220) / 2,
   };
 }
 
@@ -387,7 +443,7 @@ export function remeasure() {
     const node = store.nodes.get(id);
     if (!node) continue;
     if (!node.h) {
-      noteSizes.set(id, { w: elNode.offsetWidth || node.w || NOTE_W, h: elNode.offsetHeight || 120 });
+      noteSizes.set(id, { w: elNode.offsetWidth || node.w || NOTE_W, h: elNode.offsetHeight || 220 });
     } else {
       noteSizes.set(id, { w: node.w, h: node.h });
     }
@@ -406,7 +462,7 @@ function fitToContent(animate = true) {
   }
   let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
   for (const n of nodes) {
-    const s = noteSizes.get(n.id) || { w: n.w || NOTE_W, h: n.h || 120 };
+    const s = noteSizes.get(n.id) || { w: n.w || NOTE_W, h: n.h || 220 };
     minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
     maxX = Math.max(maxX, n.x + (n.w || s.w)); maxY = Math.max(maxY, n.y + (n.h || s.h));
   }
@@ -567,10 +623,12 @@ function startResize(e, node, elNode) {
   try { elNode.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
   const move = ev => {
     const nw = clamp(ow + (ev.clientX - start.x) / zoom, MIN_W, MAX_W);
-    const nh = clamp(oh + (ev.clientY - start.y) / zoom, MIN_H, MAX_H);
+    const contentH = Math.max(MIN_H, elNode.scrollHeight);
+    const nh = clamp(oh + (ev.clientY - start.y) / zoom, contentH, MAX_H);
     node.w = Math.round(nw); node.h = Math.round(nh);
     elNode.style.width = node.w + 'px';
-    elNode.style.height = node.h + 'px';
+    elNode.style.minHeight = node.h + 'px';
+    elNode.style.height = 'auto';
     noteSizes.set(node.id, { w: node.w, h: node.h });
     scheduleEdges();
   };
@@ -694,7 +752,7 @@ async function addChildNote(parent) {
   const b = noteBox(parent);
   // cascade below-right of parent, avoiding exact overlap
   const sibs = nodeChildren(parent.id).length;
-  await createNote({ x: b.cx - NOTE_W / 2 + 40 + sibs * 24, y: parent.y + (noteSizes.get(parent.id)?.h || 120) + 30, parentId: parent.id });
+  await createNote({ x: b.cx - NOTE_W / 2 + 40 + sibs * 24, y: parent.y + (noteSizes.get(parent.id)?.h || 220) + 30, parentId: parent.id });
 }
 
 function noteMenu(node, anchor) {
@@ -702,7 +760,7 @@ function noteMenu(node, anchor) {
   const kids = nodeChildren(node.id).length;
   const items = [
     menuItem('✎  Yeniden adlandır', () => renameNote(node, close)),
-    menuItem('＋  Alt not ekle', () => { close(); addChildNote(node); }),
+    menuItem('↳  Alt not ekle', () => { close(); addChildNote(node); }),
     menuItem('◫  Alanlar', () => { close(); openFieldEditor(node.id, anchor); }),
     menuItem('🎨  Renk', () => colorPicker(node, close)),
     node.parentId != null && menuItem('☁  Kök yap', async () => {
@@ -907,7 +965,7 @@ export function addChildToSelected() {
   const sibs = nodeChildren(parent.id).length;
   return createNote({
     x: b.cx - NOTE_W / 2 + 40 + sibs * 24,
-    y: parent.y + (noteSizes.get(parent.id)?.h || 120) + 30,
+    y: parent.y + (noteSizes.get(parent.id)?.h || 220) + 30,
     parentId: parent.id,
   });
 }

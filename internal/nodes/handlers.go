@@ -293,6 +293,33 @@ func (h *Handlers) DeleteField(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, 200, map[string]bool{"ok": true})
 }
 
+type reorderReq struct {
+	IDs []int64 `json:"ids"`
+}
+
+// ReorderFields reorders a node's fields to match the given id order.
+func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
+	nodeID := NodeIDFrom(r.Context())
+	var req reorderReq
+	if err := httpx.Body(r, &req); err != nil {
+		httpx.Err(w, 400, "invalid body")
+		return
+	}
+	n, err := h.Store.ReorderFields(nodeID, req.IDs)
+	if err == ErrBadOrder {
+		httpx.Err(w, 400, "field list must match the note's fields")
+		return
+	}
+	if err != nil {
+		httpx.Err(w, 500, "reorder failed")
+		return
+	}
+	h.emit(boards.IDFrom(r.Context()), map[string]any{
+		"type": "node_updated", "id": n.ID, "node": n, "actor": httpx.ClientID(r),
+	})
+	httpx.JSON(w, 200, n)
+}
+
 // --- files ------------------------------------------------------------------------
 
 var allowedImageMimes = map[string]bool{

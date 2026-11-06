@@ -47,6 +47,24 @@ function safeHost(url) {
   try { return new URL(url).host; } catch { return ''; }
 }
 
+/** Render a single field as a note-body element: a text line, an image, or a
+ *  chip (date/time/datetime/link). Used by the mindmap's ordered field list. */
+export function fieldElement(f) {
+  if (f.type === 'text') {
+    return el('div.note-desc-line', null, f.value);
+  }
+  if (f.type === 'image') {
+    return fileImg(f.value, 'field-img', 'görsel');
+  }
+  let text = f.value;
+  if (f.type === 'date') text = fmtDate(f.value);
+  if (f.type === 'link') text = safeHost(f.value) || f.value;
+  if (f.type === 'datetime') text = f.value.replace('T', ' ');
+  return f.type === 'link'
+    ? el('a.field-chip', { href: f.value, target: '_blank', rel: 'noopener noreferrer', title: f.value }, iconOf(f.type), ' ', text)
+    : el('span.field-chip', { title: f.value }, iconOf(f.type), ' ', text);
+}
+
 /** Open the edit popover for a node. */
 export function openFieldEditor(nodeId, anchor) {
   const node = store.nodes.get(nodeId);

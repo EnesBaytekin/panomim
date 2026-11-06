@@ -897,6 +897,7 @@ a.field-chip:hover { color: var(--accent); }
   position: absolute;
   min-width: 120px;
   max-width: 420px;
+  min-height: 220px; /* square default; grows with content */
   padding-bottom: 6px;
   border-radius: 3px 14px 5px 14px;
   transform: rotate(var(--tilt, 0deg)); /* doodle corkboard tilt */
@@ -1024,10 +1025,11 @@ a.field-chip:hover { color: var(--accent); }
 .note-tools {
   display: flex;
   gap: 2px;
-  flex: none;
   opacity: 0;
   transition: opacity .13s;
-  position: relative; /* keep tools clickable above the corner resize handle */
+  position: absolute; /* float at the top-right, over the paper — doesn't squeeze the title */
+  top: 6px;
+  right: 6px;
   z-index: 3;
 }
 .note.editable:hover .note-tools,
@@ -1048,17 +1050,15 @@ a.field-chip:hover { color: var(--accent); }
 
 .note-fields {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column; /* one ordered field per row */
   gap: 4px;
-  padding: 4px 10px 2px 35px;
+  padding: 4px 10px 6px 35px;
 }
 .note-fields .field-chip {
   background: rgba(0, 0, 0, 0.08);
   color: inherit;
   max-width: 100%;
 }
-/* image fields hug the note paper; a user-resized (sized) note scales them */
-.note-fields { flex-wrap: wrap; }
 .note-fields .field-img {
   display: block;
   max-width: 100%;
@@ -1067,23 +1067,37 @@ a.field-chip:hover { color: var(--accent); }
   border: 1px solid var(--note-line);
   box-shadow: none;
 }
-.note.sized { display: flex; flex-direction: column; }
-.note.sized .note-head,
-.note.sized .note-desc { flex: none; }
-.note.sized .note-fields {
-  flex: 1 1 auto;
-  min-height: 0;
+
+/* one field per row: [drag grip][content] */
+.field-item {
   display: flex;
   align-items: flex-start;
-  justify-content: center;
-  overflow: hidden;
+  gap: 3px;
 }
-.note.sized .field-img {
-  max-height: 100%;
-  width: auto;
-  object-fit: contain;
-  margin: 0 auto;
+.field-item .note-desc-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  opacity: .82;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
+.field-item > .field-img { flex: 1 1 auto; min-width: 0; }
+.field-grip {
+  display: none;
+  flex: none;
+  cursor: grab;
+  color: var(--note-line);
+  font-size: 12px;
+  letter-spacing: -2px;
+  padding: 2px 1px 0 0;
+  line-height: 1.4;
+  user-select: none;
+}
+.note.editable .field-grip { display: inline-block; }
+.field-item.dragging { opacity: .4; }
+.field-item.drag-over { box-shadow: 0 -2px 0 0 var(--accent); }
 
 .note-resize {
   display: none;

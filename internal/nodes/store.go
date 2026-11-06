@@ -41,6 +41,7 @@ var (
 	ErrForbidden      = errors.New("nodes: forbidden")
 	ErrTooLarge       = errors.New("nodes: file too large")
 	ErrBadType        = errors.New("nodes: bad field type")
+	ErrBadOrder       = errors.New("nodes: bad field order")
 )
 
 type Store struct{ DB *sql.DB }
@@ -414,6 +415,51 @@ func (s *Store) DeleteField(id int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ReorderFields sets each field's position to its index in the given id order.
+// ids must be a permutation of the node's current field ids (same set, no dups).
+func (s *Store) ReorderFields(nodeID int64, ids []int64) (*Node, error) {
+	rows, err := s.DB.Query(`SELECT id FROM node_fields WHERE node_id = ?`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	set := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		set[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) != len(set) {
+		return nil, ErrBadOrder
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if !set[id] || seen[id] {
+			return nil, ErrBadOrder
+		}
+		seen[id] = true
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for i, id := range ids {
+		if _, err := tx.Exec(`UPDATE node_fields SET position = ? WHERE id = ?`, i, id); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.Node(nodeID)
 }
 
 // --- files ---------------------------------------------------------------------
