@@ -222,6 +222,30 @@ var migrations = []migration{
 			)`,
 		},
 	},
+	{
+		version: 8, // friends & friend requests (arkadaş sistemi)
+		stmts: []string{
+			// Pending requests only: accepted/declined requests are removed.
+			`CREATE TABLE IF NOT EXISTS friend_requests (
+				id           INTEGER PRIMARY KEY,
+				from_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				to_user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				created_at   INTEGER NOT NULL,
+				UNIQUE(from_user_id, to_user_id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_friendreq_to ON friend_requests(to_user_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_friendreq_from ON friend_requests(from_user_id)`,
+			// Friendship is stored bidirectionally (two rows) so listing one's
+			// friends is a single indexed query.
+			`CREATE TABLE IF NOT EXISTS friends (
+				user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				friend_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				created_at INTEGER NOT NULL,
+				PRIMARY KEY (user_id, friend_id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_friends_friend ON friends(friend_id)`,
+		},
+	},
 }
 
 // Now returns the current unix time used for all timestamp columns.

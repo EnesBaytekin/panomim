@@ -851,6 +851,53 @@ a.field-chip:hover { color: var(--accent); }
 .share-role { color: var(--ink-soft); font-size: 12px; }
 .share-row .input.small { width: auto; }
 
+/* --- friends ------------------------------------------------------------------------------- */
+
+.friends-modal { display: flex; flex-direction: column; }
+.friends-add { display: flex; gap: 8px; margin-bottom: 14px; }
+.friends-add .input { flex: 1; min-width: 0; }
+.friends-body { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; overflow: auto; }
+.friends-section {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 12px 2px 4px;
+}
+.friends-section:first-child { margin-top: 0; }
+.friends-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.friends-head .modal-title { margin: 0; flex: 1; }
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 6px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+}
+.friend-row:hover { background: var(--hover); }
+.friend-row .avatar.md { width: 34px; height: 34px; font-size: 13px; }
+.friend-name { flex: 1; min-width: 0; display: flex; flex-direction: column; font-weight: 600; }
+.friend-sub { font-size: 11.5px; font-weight: 500; color: var(--ink-soft); }
+.friend-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.friend-row.board-row { padding: 8px 6px; }
+.friend-row.board-row .board-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.friend-row.board-row > span:last-child { color: var(--ink-soft); }
+.modal-label { display: block; font-size: 12.5px; font-weight: 650; color: var(--ink-soft); margin: 6px 0 6px; }
+.friends-body .dim { margin: 0 0 10px; }
+
 /* --- empty states ---------------------------------------------------------------------------- */
 
 .empty-state {

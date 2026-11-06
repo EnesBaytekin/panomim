@@ -5,6 +5,7 @@ import { store, on, emit, canEdit, myRole, nodeChildren } from './store.js';
 import { initListView } from './listview.js';
 import * as mm from './mindmap.js';
 import { connectBoard, disconnect, resync } from './ws.js';
+import { openFriends } from './friends.js';
 
 let root = null;
 let sidebarEl = null;
@@ -137,6 +138,7 @@ function profileMenu(anchor) {
         el('div.profile-sub', null, 'fotoğraf için tıkla'),
       ),
     ),
+    el('button.menu-item', { onclick: () => { close(); openFriends(); } }, '👥  Arkadaşlar'),
     el('button.menu-item', { onclick: () => { close(); passwordDialog(); } }, '🔑  Parola değiştir'),
     el('button.menu-item', { onclick: () => { close(); doLogout(); } }, '🚪  Çıkış yap'),
   );
@@ -637,4 +639,6 @@ function wireStore() {
   on('board', () => { renderBoardHeader(); renderPresence(); });
   // keep remote selection hints in list view too: listview re-renders on 'selection'
   on('selection', () => emit('nodes', 'replace'));
+  // friends panel "open this board" navigation (avoids a circular app.js import)
+  on('open-board', id => openBoard(id));
 }

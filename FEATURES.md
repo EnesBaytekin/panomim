@@ -22,11 +22,11 @@
 - [x] 3.1 Profil resmine tıkla → sayfa içi büyük popup + "düzenle" (resim seç)
 - [x] 3.2 Aktif kullanıcılar (sağ üst avatarlar) → mini açılır panel; avatar → büyük görüntü (sadece izleme)
 
-## Faz 4 — Arkadaş sistemi (backend + frontend)
-- [ ] 4.1 DB: `friends` + `friend_requests` (migration v8)
-- [ ] 4.2 API: istek gönder, istek listele, kabul/reddet, arkadaş listesi, ortak panolar
-- [ ] 4.3 Frontend: profil → arkadaşlar → kullanıcı adıyla ekle → istek/onay → arkadaş listesi → arkadaş seç → ortak panolar → "pano paylaş" → pano seç → paylaş (arkadaş otomatik seçili, rol ayarla) → geri
-- [ ] 4.4 Modal/overlay panel yapısı (arka karartma, focus, dışına tıklayınca kapan)
+## Faz 4 — Arkadaş sistemi (backend + frontend) ✅
+- [x] 4.1 DB: `friends` + `friend_requests` (migration v8)
+- [x] 4.2 API: istek gönder, istek listele, kabul/reddet, arkadaş listesi, ortak panolar
+- [x] 4.3 Frontend: profil → arkadaşlar → kullanıcı adıyla ekle → istek/onay → arkadaş listesi → arkadaş seç → ortak panolar → "pano paylaş" → pano seç → paylaş (arkadaş otomatik seçili, rol ayarla) → geri
+- [x] 4.4 Modal/overlay panel yapısı (arka karartma, focus, dışına tıklayınca kapan)
 
 ## Faz 5 — i18n (TR/EN)
 - [ ] 5.1 Dil altyapısı (sözlük + dil state)
