@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"todoer/internal/db"
+	"panomim/internal/db"
 )
 
 func testStore(t *testing.T) *Store {

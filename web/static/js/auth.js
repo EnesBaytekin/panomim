@@ -7,7 +7,7 @@ export function renderAuth(root, onAuthed) {
 
   const title = el('h1.brand', null,
     el('span.brand-mark', null, '✓'),
-    ' todoer',
+    ' panomim',
   );
 
   const userInput = el('input.input', { type: 'text', autocomplete: 'username', placeholder: 'kullanıcı adı', spellcheck: 'false' });

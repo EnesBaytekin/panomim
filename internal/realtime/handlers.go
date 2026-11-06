@@ -11,9 +11,9 @@ import (
 
 	"github.com/coder/websocket"
 
-	"todoer/internal/auth"
-	"todoer/internal/boards"
-	"todoer/internal/httpx"
+	"panomim/internal/auth"
+	"panomim/internal/boards"
+	"panomim/internal/httpx"
 )
 
 func randomToken() string {

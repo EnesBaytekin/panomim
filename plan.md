@@ -1,12 +1,12 @@
-# Todoer — Web Tabanlı Tree/Mindmap Todo Uygulaması
+# Panomim — Web Tabanlı Tree/Mindmap Todo Uygulaması
 
 > Cozy, mantar pano + not kağıdı estetikli; Go backend + gömülü frontend, SQLite, realtime collaboration.
 
 ## Mimari Genel Bakış
 
 ```
-todoer/
-├── cmd/todoer/main.go          # entrypoint, TLS, graceful shutdown
+panomim/
+├── cmd/panomim/main.go          # entrypoint, TLS, graceful shutdown
 ├── internal/
 │   ├── config/config.go        # flag/env ayarları
 │   ├── db/db.go                # SQLite (modernc - pure Go, CGO yok), migrasyonlar
@@ -19,7 +19,7 @@ todoer/
 ├── web/
 │   ├── embed.go                # go:embed all:static
 │   └── static/                 # index.html, css/app.css, js/* (framework yok, ES modules)
-├── data/                       # çalışma zamanı: todoer.db, certs (git'e girmez)
+├── data/                       # çalışma zamanı: panomim.db, certs (git'e girmez)
 ├── Dockerfile / docker-compose.yml
 ├── scripts/smoke.sh            # uçtan uca API smoke testi
 └── scripts/e2e/                # Playwright tarayıcı testleri (tek kullanıcı + realtime)

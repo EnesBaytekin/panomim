@@ -8,7 +8,7 @@ import { renderApp } from './app.js';
 const root = document.getElementById('app');
 
 function initTheme() {
-  const saved = localStorage.getItem('todoer.theme');
+  const saved = localStorage.getItem('panomim.theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark' : 'light'));
 }

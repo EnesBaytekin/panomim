@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"todoer/internal/auth"
-	"todoer/internal/boards"
-	"todoer/internal/httpx"
-	"todoer/internal/nodes"
-	"todoer/internal/prefs"
-	"todoer/internal/realtime"
-	"todoer/web"
+	"panomim/internal/auth"
+	"panomim/internal/boards"
+	"panomim/internal/httpx"
+	"panomim/internal/nodes"
+	"panomim/internal/prefs"
+	"panomim/internal/realtime"
+	"panomim/web"
 )
 
 // Deps carries the assembled services.

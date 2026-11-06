@@ -9,9 +9,9 @@ import (
 
 	"github.com/coder/websocket"
 
-	"todoer/internal/auth"
-	"todoer/internal/boards"
-	"todoer/internal/db"
+	"panomim/internal/auth"
+	"panomim/internal/boards"
+	"panomim/internal/db"
 )
 
 // spinUp builds a hub + handlers over a fresh in-memory DB with two users.

@@ -1,4 +1,4 @@
-// Command todoer runs the self-contained todo web app (frontend embedded).
+// Command panomim runs the self-contained pano & mindmap web app (frontend embedded).
 package main
 
 import (
@@ -20,14 +20,14 @@ import (
 
 	"golang.org/x/crypto/acme/autocert"
 
-	"todoer/internal/auth"
-	"todoer/internal/boards"
-	"todoer/internal/config"
-	"todoer/internal/db"
-	"todoer/internal/nodes"
-	"todoer/internal/prefs"
-	"todoer/internal/realtime"
-	"todoer/internal/server"
+	"panomim/internal/auth"
+	"panomim/internal/boards"
+	"panomim/internal/config"
+	"panomim/internal/db"
+	"panomim/internal/nodes"
+	"panomim/internal/prefs"
+	"panomim/internal/realtime"
+	"panomim/internal/server"
 )
 
 func main() {
@@ -41,12 +41,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	migrateLegacyData(cfg.DataDir)
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return fmt.Errorf("data dir: %w", err)
 	}
 
 	// --- database ---
-	database, err := db.Open(filepath.Join(cfg.DataDir, "todoer.db"))
+	database, err := db.Open(filepath.Join(cfg.DataDir, "panomim.db"))
 	if err != nil {
 		return fmt.Errorf("db open: %w", err)
 	}
@@ -142,7 +143,7 @@ func run() error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
 	url := fmt.Sprintf("%s://%s", scheme, displayHost(cfg.Addr))
-	fmt.Printf("\n  ✓ todoer hazır → %s\n  ✓ veri: %s\n\n", url, cfg.DataDir)
+	fmt.Printf("\n  ✓ panomim hazır → %s\n  ✓ veri: %s\n\n", url, cfg.DataDir)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -169,6 +170,38 @@ func mustListen(addr string) net.Listener {
 
 // ensureJWTSecret loads (or creates) the token signing secret from the meta
 // table so existing sessions stay valid across restarts.
+// migrateLegacyData carries pre-rename "todoer" installations over to the new
+// panomim names: the default data directory and the sqlite file (with -wal/-shm
+// sidecars). Runs before the dir/db are touched, so existing data survives the
+// rename untouched.
+func migrateLegacyData(dir string) {
+	// eski varsayılan dizin → yeni varsayılan dizin (yalnızca varsayılan kullanılıyorsa)
+	if home, err := os.UserHomeDir(); err == nil {
+		if dir == filepath.Join(home, ".local", "share", "panomim") {
+			old := filepath.Join(home, ".local", "share", "todoer")
+			if _, err := os.Stat(dir); os.IsNotExist(err) {
+				if _, err := os.Stat(old); err == nil {
+					if err := os.Rename(old, dir); err != nil {
+						log.Printf("eski veri dizini taşınamadı (%s): %v", old, err)
+					}
+				}
+			}
+		}
+	}
+	// eski db dosya adı → yeni
+	newDB := filepath.Join(dir, "panomim.db")
+	if _, err := os.Stat(newDB); os.IsNotExist(err) {
+		for _, ext := range []string{"", "-wal", "-shm"} {
+			oldDB := filepath.Join(dir, "todoer.db"+ext)
+			if _, err := os.Stat(oldDB); err == nil {
+				if err := os.Rename(oldDB, newDB+ext); err != nil {
+					log.Printf("eski veritabanı taşınamadı (%s): %v", oldDB, err)
+				}
+			}
+		}
+	}
+}
+
 func ensureJWTSecret(d *sql.DB) ([]byte, error) {
 	var secret string
 	err := d.QueryRow(`SELECT value FROM meta WHERE key = 'jwt_secret'`).Scan(&secret)

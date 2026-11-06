@@ -41,7 +41,7 @@ func EnsureSelfSigned(dataDir string) (tls.Certificate, error) {
 	host, _ := os.Hostname()
 	tmpl := x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: "todoer-self-signed", Organization: []string{"todoer"}},
+		Subject:      pkix.Name{CommonName: "panomim-self-signed", Organization: []string{"panomim"}},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().AddDate(10, 0, 0),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

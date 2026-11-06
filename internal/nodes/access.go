@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"todoer/internal/auth"
-	"todoer/internal/boards"
-	"todoer/internal/httpx"
+	"panomim/internal/auth"
+	"panomim/internal/boards"
+	"panomim/internal/httpx"
 )
 
 type ctxNodeID struct{}

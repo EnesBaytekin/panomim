@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"todoer/internal/auth"
-	"todoer/internal/httpx"
+	"panomim/internal/auth"
+	"panomim/internal/httpx"
 )
 
 type Handlers struct {

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"todoer/internal/httpx"
+	"panomim/internal/httpx"
 )
 
 // maxAvatarBytes caps the uploaded profile photo (profil fotoğrafı boyut sınırı).

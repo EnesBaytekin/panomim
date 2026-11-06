@@ -3,8 +3,8 @@
 Tarayıcı tabanlı Playwright testleri. Sunucunun `http` modda çalışıyor olması gerekir:
 
 ```bash
-go build -o /tmp/todoer ./cmd/todoer
-/tmp/todoer -http -addr 127.0.0.1:8443 -data /tmp/todoer-test-data &
+go build -o /tmp/panomim ./cmd/panomim
+/tmp/panomim -http -addr 127.0.0.1:8443 -data /tmp/panomim-test-data &
 ```
 
 ## Kurulum

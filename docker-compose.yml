@@ -1,24 +1,26 @@
 services:
-  todoer:
+  panomim:
     # hazır imaj kullanır (önce ./build.sh ile derleyin — bkz. KURULUM.md);
-    # farklı makinede: docker load < todoer-latest.tar.gz yeterli, kaynak kod gerekmez
-    image: ${TODOER_IMAGE:-todoer:latest}
+    # farklı makinede: docker load < panomim-latest.tar.gz yeterli, kaynak kod gerekmez
+    image: ${PANOMIM_IMAGE:-panomim:latest}
     ports:
       - "8443:8443"
     volumes:
       # isimli volume ilk kullanımda doğru sahiplikle (nonroot) oluşur;
       # bind-mount tercih ederseniz dizini 65532 uid'sine açın: chown 65532 ./data
+      # NOT: volume adı eski "todoer-data" — mevcut kurulumlardaki veriyi
+      # kaybetmemek için bilinçli olarak korunuyor (panomim.db göçü main.go'da otomatik).
       - todoer-data:/data
     restart: unless-stopped
     environment:
       # Değerler proje kökündeki .env dosyasından gelir (yoksa buradaki varsayılanlar).
       # Tüm seçenekler için bkz. .env.example ve KURULUM.md
-      TODOER_ADDR: ${TODOER_ADDR:-:8443}
-      TODOER_DATA: /data
-      TODOER_HTTP: ${TODOER_HTTP:-true}
-      TODOER_HTTPS_DOMAIN: ${TODOER_HTTPS_DOMAIN:-}
-      TODOER_CERT: ${TODOER_CERT:-}
-      TODOER_KEY: ${TODOER_KEY:-}
+      PANOMIM_ADDR: ${PANOMIM_ADDR:-:8443}
+      PANOMIM_DATA: /data
+      PANOMIM_HTTP: ${PANOMIM_HTTP:-true}
+      PANOMIM_HTTPS_DOMAIN: ${PANOMIM_HTTPS_DOMAIN:-}
+      PANOMIM_CERT: ${PANOMIM_CERT:-}
+      PANOMIM_KEY: ${PANOMIM_KEY:-}
 
 volumes:
   todoer-data:

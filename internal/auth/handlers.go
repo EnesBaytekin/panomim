@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"todoer/internal/httpx"
+	"panomim/internal/httpx"
 )
 
-const refreshCookie = "todoer_rt"
+const refreshCookie = "panomim_rt"
 
 type Service struct {
 	Store  *Store

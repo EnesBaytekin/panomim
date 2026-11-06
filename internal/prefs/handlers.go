@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"todoer/internal/auth"
-	"todoer/internal/boards"
-	"todoer/internal/httpx"
+	"panomim/internal/auth"
+	"panomim/internal/boards"
+	"panomim/internal/httpx"
 )
 
 // Get returns the caller's stored prefs for {boardID}.

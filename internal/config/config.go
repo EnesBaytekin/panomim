@@ -1,6 +1,6 @@
 // Package config holds application configuration resolved from flags and environment.
 //
-// Every setting can come from a TODOER_* environment variable (handy for
+// Every setting can come from a PANOMIM_* environment variable (handy for
 // Docker/systemd deployments) and from a command-line flag. Flags win when both
 // are present: env values are installed as the flag defaults.
 package config
@@ -32,22 +32,22 @@ type Config struct {
 // Parse reads flags (with environment-provided defaults) and validates the result.
 func Parse() (*Config, error) {
 	home, _ := os.UserHomeDir()
-	defaultData := filepath.Join(home, ".local", "share", "todoer")
+	defaultData := filepath.Join(home, ".local", "share", "panomim")
 
 	c := &Config{}
-	flag.StringVar(&c.Addr, "addr", envStr("TODOER_ADDR", ":8443"), "listen address (env: TODOER_ADDR)")
-	flag.StringVar(&c.DataDir, "data", envStr("TODOER_DATA", defaultData), "data directory (db, certs) (env: TODOER_DATA)")
-	flag.BoolVar(&c.HTTP, "http", envBool("TODOER_HTTP", false), "serve plain HTTP instead of TLS (dev only) (env: TODOER_HTTP)")
-	flag.StringVar(&c.CertFile, "cert", os.Getenv("TODOER_CERT"), "TLS certificate PEM (defaults to auto-generated self-signed) (env: TODOER_CERT)")
-	flag.StringVar(&c.KeyFile, "key", os.Getenv("TODOER_KEY"), "TLS key PEM (env: TODOER_KEY)")
-	flag.StringVar(&c.HTTPSDomain, "https-domain", os.Getenv("TODOER_HTTPS_DOMAIN"), "domain for Let's Encrypt autocert (enables public HTTPS) (env: TODOER_HTTPS_DOMAIN)")
-	flag.BoolVar(&c.Dev, "dev", envBool("TODOER_DEV", false), "serve web assets from disk for development (env: TODOER_DEV)")
-	flag.StringVar(&c.DevDir, "dev-dir", envStr("TODOER_DEV_DIR", "web/static"), "static dir used with -dev (env: TODOER_DEV_DIR)")
+	flag.StringVar(&c.Addr, "addr", envStr("PANOMIM_ADDR", ":8443"), "listen address (env: PANOMIM_ADDR)")
+	flag.StringVar(&c.DataDir, "data", envStr("PANOMIM_DATA", defaultData), "data directory (db, certs) (env: PANOMIM_DATA)")
+	flag.BoolVar(&c.HTTP, "http", envBool("PANOMIM_HTTP", false), "serve plain HTTP instead of TLS (dev only) (env: PANOMIM_HTTP)")
+	flag.StringVar(&c.CertFile, "cert", os.Getenv("PANOMIM_CERT"), "TLS certificate PEM (defaults to auto-generated self-signed) (env: PANOMIM_CERT)")
+	flag.StringVar(&c.KeyFile, "key", os.Getenv("PANOMIM_KEY"), "TLS key PEM (env: PANOMIM_KEY)")
+	flag.StringVar(&c.HTTPSDomain, "https-domain", os.Getenv("PANOMIM_HTTPS_DOMAIN"), "domain for Let's Encrypt autocert (enables public HTTPS) (env: PANOMIM_HTTPS_DOMAIN)")
+	flag.BoolVar(&c.Dev, "dev", envBool("PANOMIM_DEV", false), "serve web assets from disk for development (env: PANOMIM_DEV)")
+	flag.StringVar(&c.DevDir, "dev-dir", envStr("PANOMIM_DEV_DIR", "web/static"), "static dir used with -dev (env: PANOMIM_DEV_DIR)")
 	flag.Parse()
 
 	// token lifetimes: env-only knobs (rarely needed on the CLI)
-	c.AccessTTL = envDuration("TODOER_ACCESS_TTL", 15*time.Minute)
-	c.RefreshTTL = envDuration("TODOER_REFRESH_TTL", 15*24*time.Hour)
+	c.AccessTTL = envDuration("PANOMIM_ACCESS_TTL", 15*time.Minute)
+	c.RefreshTTL = envDuration("PANOMIM_REFRESH_TTL", 15*24*time.Hour)
 
 	if c.DataDir == "" {
 		return nil, fmt.Errorf("data directory must not be empty")

@@ -1,4 +1,4 @@
-module todoer
+module panomim
 
 go 1.26.4
 

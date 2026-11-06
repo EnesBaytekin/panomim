@@ -38,7 +38,7 @@ function buildShell() {
 
   sidebarEl = el('aside.sidebar',
     el('div.sidebar-head',
-      el('span.brand', null, el('span.brand-mark', null, '✓'), 'todoer'),
+      el('span.brand', null, el('span.brand-mark', null, '✓'), 'panomim'),
       themeBtn,
     ),
     el('div.sidebar-section',
@@ -209,7 +209,7 @@ export function toggleTheme() {
   const cur = document.documentElement.getAttribute('data-theme') || 'light';
   const next = cur === 'light' ? 'dark' : 'light';
   document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('todoer.theme', next);
+  localStorage.setItem('panomim.theme', next);
   document.querySelector('.sidebar-head .icon-btn') && (document.querySelector('.sidebar-head .icon-btn').textContent = next === 'light' ? '☾' : '☀');
 }
 

@@ -1,4 +1,4 @@
-# Todoer 🧷
+# Panomim 🧷
 
 Ağaç (tree) ve zihin haritası (mindmap) görünümlü, gerçek zamanlı işbirlikçi bir yapılacaklar uygulaması. Go ile yazılmış **tek binary**; frontend gömülü, veritabanı (SQLite) dosyada, harici bağımlılık yok.
 
@@ -20,13 +20,13 @@ Ağaç (tree) ve zihin haritası (mindmap) görünümlü, gerçek zamanlı işbi
 ### Tek binary
 
 ```bash
-go build -o todoer ./cmd/todoer
-./todoer
+go build -o panomim ./cmd/panomim
+./panomim
 ```
 
 → `https://localhost:8443` (otomatik üretilmiş self-signed sertifika ile). İlk açılışta **kaydol** ile hesap oluşturun — uygulama admin'sizdir, ilk kullanıcıyı siz yaratırsınız.
 
-Veriler `~/.local/share/todoer` altında tutulur (`todoer.db`, sertifikalar).
+Veriler `~/.local/share/panomim` altında tutulur (`panomim.db`, sertifikalar).
 
 ### Docker
 
@@ -36,7 +36,7 @@ docker compose up --build
 ```
 
 → `http://localhost:8443` (compose varsayılanı ters proxy arkası için düz HTTP'dir;
-`.env` içinde `TODOER_HTTP=false` yaparak doğrudan TLS'e geçebilirsiniz).
+`.env` içinde `PANOMIM_HTTP=false` yaparak doğrudan TLS'e geçebilirsiniz).
 
 > 📦 **Sunucuya dağıtım** (Docker / binary / systemd, HTTPS senaryoları, `.env`,
 > yedekleme) için ayrıntılı rehber: **[KURULUM.md](KURULUM.md)**
@@ -45,20 +45,20 @@ docker compose up --build
 
 | Mod | Komut | Ne yapar |
 |---|---|---|
-| Varsayılan | `./todoer` | HTTPS, otomatik self-signed sertifika |
-| Açık HTTP | `./todoer -http` | TLS'siz — geliştirme / ters proxy arkası |
-| Kendi sertifikası | `./todoer -cert cert.pem -key key.pem` | Verilen PEM çiftiyle TLS |
-| Let's Encrypt | `./todoer -https-domain example.com` | autocert; ACME için 80 portu da açılmalı |
+| Varsayılan | `./panomim` | HTTPS, otomatik self-signed sertifika |
+| Açık HTTP | `./panomim -http` | TLS'siz — geliştirme / ters proxy arkası |
+| Kendi sertifikası | `./panomim -cert cert.pem -key key.pem` | Verilen PEM çiftiyle TLS |
+| Let's Encrypt | `./panomim -https-domain example.com` | autocert; ACME için 80 portu da açılmalı |
 
 ### Bayraklar ve Ortam Değişkenleri
 
-Her bayrağın `TODOER_*` ortam değişkeni karşılığı vardır (örn. `-addr` ↔ `TODOER_ADDR`);
+Her bayrağın `PANOMIM_*` ortam değişkeni karşılığı vardır (örn. `-addr` ↔ `PANOMIM_ADDR`);
 ikisi birden verilirse bayrak kazanır. Tam liste için bkz. [KURULUM.md](KURULUM.md).
 
 | Bayrak | Varsayılan | Açıklama |
 |---|---|---|
 | `-addr` | `:8443` | dinleme adresi |
-| `-data` | `~/.local/share/todoer` | veri dizini (SQLite, sertifika, autocert önbelleği) |
+| `-data` | `~/.local/share/panomim` | veri dizini (SQLite, sertifika, autocert önbelleği) |
 | `-http` | `false` | düz HTTP (yalnızca geliştirme) |
 | `-cert` / `-key` | boş | TLS PEM ikilisi; ikisi de verilmezse self-signed üretilir |
 | `-https-domain` | boş | verilirse Let's Encrypt autocert etkinleşir |
@@ -68,7 +68,7 @@ ikisi birden verilirse bayrak kazanır. Tam liste için bkz. [KURULUM.md](KURULU
 Geliştirme akışı (frontend değişiklikleri rebuild gerektirmez):
 
 ```bash
-./todoer -http -dev -addr 127.0.0.1:8443
+./panomim -http -dev -addr 127.0.0.1:8443
 ```
 
 ## Testler
@@ -82,7 +82,7 @@ scripts/e2e/                       # Playwright tarayıcı testleri (bkz. script
 ## Mimari
 
 ```
-cmd/todoer        entrypoint: TLS/autocert, graceful shutdown
+cmd/panomim        entrypoint: TLS/autocert, graceful shutdown
 internal/
   auth            argon2id parolalar, JWT access, refresh rotasyonu + reuse tespiti, rate limit
   boards          pano CRUD, üyelik ve roller

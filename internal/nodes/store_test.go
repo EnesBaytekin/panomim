@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"todoer/internal/db"
+	"panomim/internal/db"
 )
 
 func testSetup(t *testing.T) *Store {

@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"todoer/internal/auth"
-	"todoer/internal/boards"
-	"todoer/internal/httpx"
+	"panomim/internal/auth"
+	"panomim/internal/boards"
+	"panomim/internal/httpx"
 )
 
 // Emit broadcasts a realtime event to a board's websocket room. Wired by the

@@ -1,16 +1,16 @@
 #!/usr/bin/env sh
-# todoer Docker imajını derler.
+# panomim Docker imajını derler.
 #
-#   ./build.sh              → todoer:latest derler
-#   ./build.sh v1.2 etiket  → todoer:v1.2 + todoer:latest derler
-#   IMAGE=benim/todoer ./build.sh   → farklı image adı
+#   ./build.sh              → panomim:latest derler
+#   ./build.sh v1.2 etiket  → panomim:v1.2 + panomim:latest derler
+#   IMAGE=benim/panomim ./build.sh   → farklı image adı
 #
 # İmaj tek makinede derlenip başka makineye kaynak kod olmadan taşınabilir:
-#   docker save todoer:latest | gzip > todoer-image.tar.gz
-#   (hedef makinede)  docker load < todoer-image.tar.gz && docker compose up -d
+#   docker save panomim:latest | gzip > panomim-image.tar.gz
+#   (hedef makinede)  docker load < panomim-image.tar.gz && docker compose up -d
 set -eu
 
-IMAGE="${IMAGE:-todoer}"
+IMAGE="${IMAGE:-panomim}"
 TAG="${1:-latest}"
 
 cd "$(dirname "$0")"

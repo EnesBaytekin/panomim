@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"todoer/internal/auth"
+	"panomim/internal/auth"
 )
 
 type Store struct {

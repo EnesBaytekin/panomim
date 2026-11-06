@@ -7,10 +7,10 @@ export class Api {
     this.expiresAt = 0;
     this.user = null;
     this.refreshing = null;
-    this.clientId = sessionStorage.getItem('todoer.clientId') || this._rand();
-    sessionStorage.setItem('todoer.clientId', this.clientId);
-    this.deviceId = localStorage.getItem('todoer.deviceId') || this._rand();
-    localStorage.setItem('todoer.deviceId', this.deviceId);
+    this.clientId = sessionStorage.getItem('panomim.clientId') || this._rand();
+    sessionStorage.setItem('panomim.clientId', this.clientId);
+    this.deviceId = localStorage.getItem('panomim.deviceId') || this._rand();
+    localStorage.setItem('panomim.deviceId', this.deviceId);
   }
 
   _rand() {
