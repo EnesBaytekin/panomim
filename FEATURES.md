@@ -18,9 +18,9 @@
 - [x] 2.1 Mobilde "not ekle" → alan/textarea + klavye açılmıyor → düzelt (senkron focus; mindmap'te eklenen not otomatik başlık düzenlemeye geçer)
 - [x] 2.2 Profil → "çıkış yap" ikonu mobil hamburger menüde görünmüyor → düzelt (⏻ → 🚪)
 
-## Faz 3 — Profil görseli + aktif kullanıcılar
-- [ ] 3.1 Profil resmine tıkla → sayfa içi büyük popup + "düzenle" (resim seç)
-- [ ] 3.2 Aktif kullanıcılar (sağ üst avatarlar) → mini açılır panel; avatar → büyük görüntü (sadece izleme)
+## Faz 3 — Profil görseli + aktif kullanıcılar ✅
+- [x] 3.1 Profil resmine tıkla → sayfa içi büyük popup + "düzenle" (resim seç)
+- [x] 3.2 Aktif kullanıcılar (sağ üst avatarlar) → mini açılır panel; avatar → büyük görüntü (sadece izleme)
 
 ## Faz 4 — Arkadaş sistemi (backend + frontend)
 - [ ] 4.1 DB: `friends` + `friend_requests` (migration v8)

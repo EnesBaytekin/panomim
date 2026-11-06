@@ -55,7 +55,7 @@ function buildShell() {
     el('div.sidebar-foot', userFoot()),
   );
 
-  presenceEl = el('div.presence-bar');
+  presenceEl = el('div.presence-bar', { title: 'bu panoda aktif kullanıcılar', onclick: () => presenceDropdown() });
   boardTitleEl = el('h2.board-title', null, '…');
 
   const boardMenuBtn = el('button.icon-btn', { title: 'pano menüsü', onclick: e => boardMenu(e.currentTarget) }, '⋯');
@@ -128,28 +128,8 @@ function profileMenu(anchor) {
   const u = store.user;
   const { pop, close } = popover(anchor, { placement: 'top-start' });
   const bigAvatar = avatar({ userId: u.id, username: u.username }, 'lg');
-  bigAvatar.title = 'fotoğraf yükle / değiştir';
-  const fileBtn = el('input', {
-    type: 'file',
-    accept: 'image/png,image/jpeg,image/gif,image/webp',
-    style: 'display:none',
-    onchange: async () => {
-      const file = fileBtn.files[0];
-      close();
-      if (!file) return;
-      if (file.size > 2 << 20) { toast('Fotoğraf en fazla 2 MB olabilir', 'error'); return; }
-      try {
-        const buf = await file.arrayBuffer();
-        const res = await api.req('PUT', '/api/me/avatar', buf, { raw: true, headers: { 'Content-Type': file.type || 'application/octet-stream' } });
-        forgetAvatar(u.id);
-        if (res.removed) return;
-        toast('Profil fotoğrafı güncellendi');
-        renderUserFoot();
-        renderPresence();
-      } catch (e) { toast(e.message, 'error'); }
-    },
-  });
-  bigAvatar.addEventListener('click', () => fileBtn.click());
+  bigAvatar.title = 'fotoğrafı görüntüle / değiştir';
+  bigAvatar.addEventListener('click', () => { close(); showAvatarLarge(u, { editable: true }); });
   pop.append(
     el('div.profile-head', null, bigAvatar,
       el('div.profile-id', null,
@@ -157,10 +137,53 @@ function profileMenu(anchor) {
         el('div.profile-sub', null, 'fotoğraf için tıkla'),
       ),
     ),
-    fileBtn,
     el('button.menu-item', { onclick: () => { close(); passwordDialog(); } }, '🔑  Parola değiştir'),
     el('button.menu-item', { onclick: () => { close(); doLogout(); } }, '🚪  Çıkış yap'),
   );
+}
+
+/** Large in-page avatar popup. Editable = self (offers "edit" to pick a photo). */
+function showAvatarLarge(user, { editable = false } = {}) {
+  const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } },
+    el('div.modal.avatar-modal',
+      avatar(user, 'xl'),
+      el('div.profile-name', null, user.username),
+      editable && el('div.modal-actions',
+        el('button.btn.ghost', { onclick: () => overlay.remove() }, 'Kapat'),
+        el('button.btn.primary', { onclick: () => { overlay.remove(); chooseAvatar(user); } }, '✎ Düzenle'),
+      ),
+      !editable && el('div.modal-actions',
+        el('button.btn.ghost', { onclick: () => overlay.remove() }, 'Kapat'),
+      ),
+    ),
+  );
+  document.body.append(overlay);
+}
+
+/** Pick a photo file and upload it as the current user's avatar. */
+function chooseAvatar(user) {
+  const fileBtn = el('input', {
+    type: 'file',
+    accept: 'image/png,image/jpeg,image/gif,image/webp',
+    style: 'display:none',
+  });
+  document.body.append(fileBtn);
+  fileBtn.onchange = async () => {
+    fileBtn.remove();
+    const file = fileBtn.files[0];
+    if (!file) return;
+    if (file.size > 2 << 20) { toast('Fotoğraf en fazla 2 MB olabilir', 'error'); return; }
+    try {
+      const buf = await file.arrayBuffer();
+      const res = await api.req('PUT', '/api/me/avatar', buf, { raw: true, headers: { 'Content-Type': file.type || 'application/octet-stream' } });
+      forgetAvatar(user.id ?? user.userId);
+      if (res.removed) return;
+      toast('Profil fotoğrafı güncellendi');
+      renderUserFoot();
+      renderPresence();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  fileBtn.click();
 }
 
 function renderUserFoot() {
@@ -504,6 +527,21 @@ function renderPresence() {
   }
   presenceEl.classList.toggle('offline', !store.online);
   presenceEl.title = store.online ? `${users.length} kişi bu panoda` : 'bağlantı koptu, yeniden bağlanılıyor…';
+}
+
+/** Mini dropdown of everyone currently in this board; click a user for a large view. */
+function presenceDropdown() {
+  const users = [...store.presence.values()];
+  if (!users.length) return;
+  const { pop, close } = popover(presenceEl, { placement: 'bottom-end' });
+  pop.append(
+    el('div.pop-title', null, `Bu panoda (${users.length})`),
+    ...users.map(u =>
+      el('button.menu-item.presence-user', {
+        onclick: () => { close(); showAvatarLarge(u, { editable: false }); },
+      }, avatar({ userId: u.userId, username: u.username }, 'md'), el('span', null, u.username)),
+    ),
+  );
 }
 
 // --- share dialog ----------------------------------------------------------------

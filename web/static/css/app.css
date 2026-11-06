@@ -379,6 +379,7 @@ select.input { cursor: pointer; }
 }
 .avatar.md { width: 30px; height: 30px; font-size: 12px; }
 .avatar.lg { width: 46px; height: 46px; font-size: 17px; cursor: pointer; }
+.avatar.xl { width: 96px; height: 96px; font-size: 34px; }
 .avatar.photo,
 .presence-avatar.photo {
   background-size: cover;
@@ -397,6 +398,18 @@ select.input { cursor: pointer; }
 }
 .profile-name { font-weight: 700; font-size: 14px; }
 .profile-sub { font-size: 11px; color: var(--ink-soft); }
+
+/* büyük profil fotoğrafı popup'ı */
+.avatar-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.avatar-modal .modal-actions { width: 100%; justify-content: center; }
+.presence-user { display: flex; align-items: center; gap: 8px; }
+.presence-user .avatar { width: 24px; height: 24px; font-size: 10px; }
 
 /* --- content head ------------------------------------------------------------------ */
 
