@@ -56,6 +56,7 @@ id panomim >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin panomim
 install -d -o panomim -g panomim /var/lib/panomim
 
 # 5) yapılandırma
+install -d /etc/panomim
 if [ -n "$DOMAIN" ]; then
   cat > /etc/panomim/env <<EOF
 PANOMIM_ADDR=:443
