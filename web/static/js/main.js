@@ -4,14 +4,9 @@ import { api } from './api.js';
 import { store } from './store.js';
 import { renderAuth } from './auth.js';
 import { renderApp } from './app.js';
+import { initTheme, getLang } from './i18n.js';
 
 const root = document.getElementById('app');
-
-function initTheme() {
-  const saved = localStorage.getItem('panomim.theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark' : 'light'));
-}
 
 async function loadMe() {
   // /api/me adds lastBoardId on top of the refresh payload's user
@@ -25,6 +20,7 @@ function showApp() {
 
 async function boot() {
   initTheme();
+  document.documentElement.setAttribute('lang', getLang());
   const alive = await api.ensureRefresh();
   if (alive) showApp();
   else renderAuth(root, showApp);

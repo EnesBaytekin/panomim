@@ -24,6 +24,7 @@ import (
 	"panomim/internal/boards"
 	"panomim/internal/config"
 	"panomim/internal/db"
+	"panomim/internal/friends"
 	"panomim/internal/nodes"
 	"panomim/internal/prefs"
 	"panomim/internal/realtime"
@@ -81,13 +82,15 @@ func run() error {
 		Boards: bh.Store,
 		Emit:   hub.Broadcast,
 	}
+	fh := &friends.Handlers{Store: &friends.Store{DB: database}}
 	deps := server.Deps{
-		Auth:   authSvc,
-		Boards: bh,
-		Nodes:  nh,
-		Prefs:  &prefs.Store{DB: database},
-		WS:     &realtime.Handlers{Hub: hub, Boards: bh.Store},
-		Hub:    hub,
+		Auth:    authSvc,
+		Boards:  bh,
+		Nodes:   nh,
+		Friends: fh,
+		Prefs:   &prefs.Store{DB: database},
+		WS:      &realtime.Handlers{Hub: hub, Boards: bh.Store},
+		Hub:     hub,
 	}
 	if cfg.Dev {
 		server.SetDevDir(cfg.DevDir)

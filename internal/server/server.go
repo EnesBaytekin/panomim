@@ -11,6 +11,7 @@ import (
 
 	"panomim/internal/auth"
 	"panomim/internal/boards"
+	"panomim/internal/friends"
 	"panomim/internal/httpx"
 	"panomim/internal/nodes"
 	"panomim/internal/prefs"
@@ -23,6 +24,7 @@ type Deps struct {
 	Auth    *auth.Service
 	Boards  *boards.Handlers
 	Nodes   *nodes.Handlers
+	Friends *friends.Handlers
 	Prefs   *prefs.Store
 	WS      *realtime.Handlers
 	Hub     *realtime.Hub
@@ -49,6 +51,15 @@ func Router(d Deps) http.Handler {
 	authed("GET /api/me", http.HandlerFunc(d.Auth.Me))
 	authed("PUT /api/me/last-board", http.HandlerFunc(d.Auth.SetLastBoard))
 
+	authed("GET /api/friends", http.HandlerFunc(d.Friends.ListFriends))
+	authed("GET /api/friends/requests", http.HandlerFunc(d.Friends.ListRequests))
+	authed("POST /api/friends/requests", http.HandlerFunc(d.Friends.SendRequest))
+	authed("POST /api/friends/requests/{requestID}/accept", http.HandlerFunc(d.Friends.AcceptRequest))
+	authed("DELETE /api/friends/requests/{requestID}", http.HandlerFunc(d.Friends.DeclineRequest))
+	authed("GET /api/friends/{userID}/boards", http.HandlerFunc(d.Friends.SharedBoards))
+	authed("DELETE /api/friends/{userID}", http.HandlerFunc(d.Friends.RemoveFriend))
+	authed("GET /api/users/search", http.HandlerFunc(d.Friends.SearchUsers))
+
 	authed("GET /api/boards", http.HandlerFunc(d.Boards.List))
 	authed("POST /api/boards", http.HandlerFunc(d.Boards.Create))
 
@@ -70,6 +81,7 @@ func Router(d Deps) http.Handler {
 	authed("PATCH /api/nodes/{nodeID}", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.Patch)))
 	authed("DELETE /api/nodes/{nodeID}", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.Delete)))
 	authed("POST /api/nodes/{nodeID}/fields", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.CreateField)))
+	authed("POST /api/nodes/{nodeID}/fields/order", nodeAcc(RoleEditor)(http.HandlerFunc(d.Nodes.ReorderFields)))
 	authed("PATCH /api/fields/{fieldID}", fieldAcc(RoleEditor)(http.HandlerFunc(d.Nodes.PatchField)))
 	authed("DELETE /api/fields/{fieldID}", fieldAcc(RoleEditor)(http.HandlerFunc(d.Nodes.DeleteField)))
 	authed("POST /api/boards/{boardID}/files", board(RoleEditor)(http.HandlerFunc(d.Nodes.Upload)))

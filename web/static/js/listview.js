@@ -3,6 +3,7 @@ import { api } from './api.js';
 import { el, toast, confirmDialog } from './ui.js';
 import { store, on, nodeChildren, isCollapsed, setCollapsed, canEdit, upsertNode, removeNodes, isDescendant } from './store.js';
 import { fieldChips, openFieldEditor } from './fields.js';
+import { t } from './i18n.js';
 
 let rootEl = null;
 let editingId = null;   // node being inline-renamed
@@ -35,8 +36,8 @@ function render() {
     rootEl.append(
       el('button.tree-add-root', {
         onclick: () => { createRoot(); },
-        title: 'Yeni köşe görev ekle',
-      }, el('span.plus', null, '+'), ' yeni görev ekle'),
+        title: t('list.newRootTitle'),
+      }, el('span.plus', null, '+'), t('list.addTask')),
     );
   }
 }
@@ -44,9 +45,9 @@ function render() {
 function emptyState() {
   return el('div.empty-state',
     el('div.empty-art', null, '🗒️'),
-    el('h2', null, 'Bu pano bomboş'),
-    el('p', null, 'İlk görevini ekleyerek başla — dallara ayırmak çok kolay.'),
-    canEdit() && el('button.btn.primary', { onclick: () => createRoot() }, '+ İlk görevi ekle'),
+    el('h2', null, t('list.emptyTitle')),
+    el('p', null, t('list.emptyHint')),
+    canEdit() && el('button.btn.primary', { onclick: () => createRoot() }, t('list.emptyCTA')),
   );
 }
 
@@ -72,7 +73,7 @@ function renderNode(node, depth) {
     ? el('button.chevron', {
         class: 'chevron' + (collapsed ? ' collapsed' : ''),
         onclick: e => { e.stopPropagation(); setCollapsed(node.id, !collapsed); },
-        title: collapsed ? 'alt görevleri göster' : 'alt görevleri gizle',
+        title: collapsed ? t('list.showChildren') : t('list.hideChildren'),
       }, '▸')
     : el('span.chevron.spacer');
 
@@ -81,10 +82,10 @@ function renderNode(node, depth) {
     : el('span.tree-title', {
         onclick: () => { selectNode(node.id); },
         ondblclick: () => { if (canEdit()) startEdit(node.id); },
-      }, node.title || (el('span.dim', null, '(başlıksız)')));
+      }, node.title || (el('span.dim', null, t('list.untitled'))));
 
   const grip = canEdit()
-    ? el('span.drag-grip', { title: 'taşımak için sürükle', dataset: { grip: '1' } }, '⠿')
+    ? el('span.drag-grip', { title: t('list.dragToMove'), dataset: { grip: '1' } }, '⠿')
     : null;
 
   row.append(...[grip, chevron, checkToggle(node), title].filter(Boolean));
@@ -95,14 +96,14 @@ function renderNode(node, depth) {
 
   if (canEdit()) {
     row.append(el('span.row-actions', null,
-      el('button.icon-btn', { title: 'alt görev ekle', onclick: e => { e.stopPropagation(); addChild(node); } }, '+'),
-      editingId === node.id ? null : el('button.icon-btn', { title: 'yeniden adlandır', onclick: e => { e.stopPropagation(); startEdit(node.id); } }, '✎'),
-      el('button.icon-btn', { title: 'alanlar', onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); } }, '◫'),
-      el('button.icon-btn', { title: 'sil', onclick: e => { e.stopPropagation(); deleteNode(node); } }, '🗑'),
+      el('button.icon-btn', { title: t('list.addChild'), onclick: e => { e.stopPropagation(); addChild(node); } }, '+'),
+      editingId === node.id ? null : el('button.icon-btn', { title: t('list.rename'), onclick: e => { e.stopPropagation(); startEdit(node.id); } }, '✎'),
+      el('button.icon-btn', { title: t('list.fields'), onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); } }, '◫'),
+      el('button.icon-btn', { title: t('list.delete'), onclick: e => { e.stopPropagation(); deleteNode(node); } }, '🗑'),
     ));
   } else {
     row.append(el('span.row-actions', null,
-      el('button.icon-btn', { title: 'alanlar', onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); } }, '◫'),
+      el('button.icon-btn', { title: t('list.fields'), onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); } }, '◫'),
     ));
   }
 
@@ -119,7 +120,7 @@ function renderNode(node, depth) {
 function checkToggle(node) {
   return el('button.check', {
     class: 'check' + (node.done ? ' done' : ''),
-    title: node.done ? 'yapılmadı olarak işaretle' : 'yapıldı olarak işaretle',
+    title: node.done ? t('list.markUndone') : t('list.markDone'),
     onclick: async e => {
       e.stopPropagation();
       try {
@@ -133,10 +134,12 @@ function checkToggle(node) {
 function titleEditor(node) {
   const input = el('input.tree-edit', {
     value: editingIsNew ? '' : node.title,
-    placeholder: 'ne yapılacak?',
+    placeholder: t('list.placeholder'),
     onclick: e => e.stopPropagation(),
   });
-  requestAnimationFrame(() => { input.focus(); input.select(); });
+  // Focused synchronously by focusEditor() right after render() attaches the
+  // input — a deferred rAF/setTimeout focus does not open the soft keyboard on
+  // mobile (especially iOS), which made "add note" look broken there.
   const commit = async () => {
     const val = input.value.trim();
     const id = node.id;
@@ -175,6 +178,15 @@ function startEdit(nodeId) {
   editingId = nodeId;
   editingIsNew = false;
   render();
+  focusEditor();
+}
+
+/** Focus the active inline editor (called right after render, synchronously). */
+function focusEditor() {
+  const input = rootEl?.querySelector('.tree-edit');
+  if (!input) return;
+  try { input.focus({ preventScroll: true }); } catch { input.focus(); }
+  try { input.select(); } catch { /* no-op */ }
 }
 
 /** Create a new root and open it for editing. */
@@ -189,6 +201,7 @@ async function createRoot() {
     editingId = node.id;
     editingIsNew = true;
     render();
+    focusEditor();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -206,6 +219,7 @@ async function addChild(parent) {
     editingIsNew = true;
     setCollapsed(parent.id, false);
     render();
+    focusEditor();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -217,17 +231,17 @@ async function deleteNode(node) {
     const countAll = list => list.reduce((acc, k) => acc + 1 + countAll(nodeChildren(k.id)), 0);
     count = countAll(kids);
     const ok = await confirmDialog({
-      title: '“' + (node.title || 'başlıksız') + '” silinsin mi?',
-      body: `Bu görevin ${count} alt görevi de silinecek.`,
-      confirmText: 'Hepsini sil',
+      title: t('list.deleteTitle', { title: node.title || t('list.untitled') }),
+      body: t('list.deleteWithChildren', { n: count }),
+      confirmText: t('list.deleteAll'),
       danger: true,
     });
     if (!ok) return;
     await api.del(`/api/nodes/${node.id}?withChildren=1`);
   } else {
     const ok = await confirmDialog({
-      title: '“' + (node.title || 'başlıksız') + '” silinsin mi?',
-      confirmText: 'Sil',
+      title: t('list.deleteTitle', { title: node.title || t('list.untitled') }),
+      confirmText: t('common.delete'),
       danger: true,
     });
     if (!ok) return;
@@ -307,7 +321,7 @@ function wireDrag(row, node) {
 function startDrag(d) {
   d.started = true;
   const node = store.nodes.get(d.id);
-  d.ghost = el('div.drag-ghost', null, '🗒 ' + (node?.title || '(başlıksız)'));
+  d.ghost = el('div.drag-ghost', null, '🗒 ' + (node?.title || t('list.untitled')));
   document.body.append(d.ghost);
   document.body.classList.add('noselect');
   rootEl.querySelector(`.tree-row[data-id="${d.id}"]`)?.classList.add('drag-src');

@@ -1,6 +1,7 @@
 // Auth screen: cozy login/register card.
 import { api } from './api.js';
 import { el } from './ui.js';
+import { t, toggleTheme, toggleLang, currentTheme, getLang } from './i18n.js';
 
 export function renderAuth(root, onAuthed) {
   let mode = 'login';
@@ -10,11 +11,23 @@ export function renderAuth(root, onAuthed) {
     ' panomim',
   );
 
-  const userInput = el('input.input', { type: 'text', autocomplete: 'username', placeholder: 'kullanıcı adı', spellcheck: 'false' });
-  const passInput = el('input.input', { type: 'password', autocomplete: 'current-password', placeholder: 'parola' });
-  const pass2 = el('input.input', { type: 'password', autocomplete: 'new-password', placeholder: 'parola (tekrar)' });
+  // language + theme, available before login
+  const langBtn = el('button.icon-btn.lang-btn', {
+    title: t('app.lang'),
+    onclick: toggleLang,
+  }, getLang() === 'tr' ? 'EN' : 'TR');
+  const themeBtn = el('button.icon-btn', {
+    'data-theme-toggle': '1',
+    title: t('app.theme'),
+    onclick: toggleTheme,
+  }, currentTheme() === 'light' ? '☾' : '☀');
+  const controls = el('div.auth-controls', null, langBtn, themeBtn);
+
+  const userInput = el('input.input', { type: 'text', autocomplete: 'username', placeholder: t('auth.username'), spellcheck: 'false' });
+  const passInput = el('input.input', { type: 'password', autocomplete: 'current-password', placeholder: t('auth.password') });
+  const pass2 = el('input.input', { type: 'password', autocomplete: 'new-password', placeholder: t('auth.passwordAgain') });
   const error = el('div.form-error');
-  const submit = el('button.btn.primary.wide', { type: 'submit' }, 'Giriş yap');
+  const submit = el('button.btn.primary.wide', { type: 'submit' }, t('auth.signIn'));
   const switcher = el('button.link', { type: 'button' });
 
   const form = el('form.auth-form',
@@ -24,13 +37,13 @@ export function renderAuth(root, onAuthed) {
         submit.disabled = true;
         try {
           if (mode === 'register' && passInput.value !== pass2.value) {
-            throw new Error('parolalar eşleşmiyor');
+            throw new Error(t('auth.passwordsMismatch'));
           }
           if (mode === 'login') await api.login(userInput.value.trim(), passInput.value);
           else await api.register(userInput.value.trim(), passInput.value);
           onAuthed(api.user);
         } catch (err) {
-          error.textContent = err.message || 'bir şeyler ters gitti';
+          error.textContent = err.message || t('auth.genericError');
         } finally {
           submit.disabled = false;
         }
@@ -47,16 +60,14 @@ export function renderAuth(root, onAuthed) {
     const reg = m === 'register';
     pass2.style.display = reg ? '' : 'none';
     passInput.setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
-    submit.textContent = reg ? 'Hesap oluştur' : 'Giriş yap';
-    switcher.textContent = reg
-      ? 'hesabın var mı? giriş yap'
-      : 'hesabın yok mu? kaydol';
+    submit.textContent = reg ? t('auth.signUp') : t('auth.signIn');
+    switcher.textContent = reg ? t('auth.haveAccount') : t('auth.noAccount');
     error.textContent = '';
   }
   switcher.addEventListener('click', () => setMode(mode === 'login' ? 'register' : 'login'));
   setMode('login');
 
-  const card = el('div.auth-card', title, form, switcher);
+  const card = el('div.auth-card', title, controls, form, switcher);
   const page = el('div.auth-page', card);
   clearRoot(root);
   root.append(page);
