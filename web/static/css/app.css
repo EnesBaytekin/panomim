@@ -1131,6 +1131,7 @@ a.field-chip:hover { color: var(--accent); }
 .note-fields .field-img {
   display: block;
   max-width: 100%;
+  max-height: none; /* override the chip image cap so aspect ratio is kept */
   height: auto;
   border-radius: 4px;
   border: 1px solid var(--note-line);
@@ -1152,7 +1153,7 @@ a.field-chip:hover { color: var(--accent); }
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-.field-item > .field-img { flex: 1 1 auto; min-width: 0; }
+.field-item > .field-img { flex: 0 1 auto; max-width: 100%; }
 .field-grip {
   display: none;
   flex: none;
@@ -1171,15 +1172,36 @@ a.field-chip:hover { color: var(--accent); }
 .note-resize {
   display: none;
   position: absolute;
-  right: 1px;
-  bottom: 1px;
-  width: 17px;
-  height: 17px;
-  cursor: nwse-resize;
-  background: linear-gradient(135deg, transparent 48%, rgba(0, 0, 0, 0.22) 48%);
-  border-radius: 0 0 12px 0;
+  width: 13px;
+  height: 13px;
+  z-index: 6;
+  touch-action: none; /* touch resize, not scroll */
 }
 .note.editable .note-resize { display: block; }
+
+/* corner handles — visible diagonal grips */
+.note-resize.rs-nw { top: -5px; left: -5px; cursor: nwse-resize;
+  background: linear-gradient(135deg, rgba(0,0,0,.28) 46%, transparent 46%); border-radius: 4px 0 0 0; }
+.note-resize.rs-ne { top: -5px; right: -5px; cursor: nesw-resize;
+  background: linear-gradient(225deg, rgba(0,0,0,.28) 46%, transparent 46%); border-radius: 0 4px 0 0; }
+.note-resize.rs-sw { bottom: -5px; left: -5px; cursor: nesw-resize;
+  background: linear-gradient(45deg, rgba(0,0,0,.28) 46%, transparent 46%); border-radius: 0 0 0 4px; }
+.note-resize.rs-se { bottom: -5px; right: -5px; cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 46%, rgba(0,0,0,.28) 46%); border-radius: 0 0 4px 0; }
+
+/* edge handles — slim hot-zones with a faint bar so they're discoverable */
+.note-resize.rs-n { top: -4px; left: 50%; margin-left: -6px; cursor: ns-resize; }
+.note-resize.rs-s { bottom: -4px; left: 50%; margin-left: -6px; cursor: ns-resize; }
+.note-resize.rs-e { right: -4px; top: 50%; margin-top: -6px; cursor: ew-resize; }
+.note-resize.rs-w { left: -4px; top: 50%; margin-top: -6px; cursor: ew-resize; }
+.note-resize.rs-n::after, .note-resize.rs-s::after {
+  content: ''; position: absolute; left: 3px; right: 3px; top: 50%; height: 3px;
+  transform: translateY(-50%); background: rgba(0,0,0,.18); border-radius: 2px;
+}
+.note-resize.rs-e::after, .note-resize.rs-w::after {
+  content: ''; position: absolute; top: 3px; bottom: 3px; left: 50%; width: 3px;
+  transform: translateX(-50%); background: rgba(0,0,0,.18); border-radius: 2px;
+}
 
 .note-link {
   display: none;

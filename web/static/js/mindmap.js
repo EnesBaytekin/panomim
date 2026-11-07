@@ -25,6 +25,7 @@ let destroyed = true;
 let edgePaths = new Map(); // edgeKey -> {g, path1, path2, grad}
 
 const NOTE_PALETTE = [35, 130, 275, 350, 15, 190]; // soft hues offered in picker
+const RESIZE_DIRS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']; // 8-way resize handles
 
 export function initMindmap(container) {
   viewport = container;
@@ -178,8 +179,10 @@ function renderNoteContent(n, node) {
   const body = noteBodyEl(node);
   if (body) n.append(body);
 
-  // handles are always present; CSS reveals them only in edit mode
-  n.append(el('div.note-resize', { title: t('mm.resize') }));
+  // resize handles (8 directions); CSS reveals them only in edit mode
+  for (const dir of RESIZE_DIRS) {
+    n.append(el('div.note-resize.rs-' + dir, { title: t('mm.resize'), dataset: { dir } }));
+  }
   n.append(el('div.note-link', { title: t('mm.relink') }, '⛓'));
 }
 
@@ -578,7 +581,7 @@ function onNotePointerDown(e, node, elNode) {
   const resizeHandle = e.target.closest('.note-resize');
 
   if (editMode && canEdit() && linkHandle) return startRelink(e, node);
-  if (editMode && canEdit() && resizeHandle) return startResize(e, node, elNode);
+  if (editMode && canEdit() && resizeHandle) return startResize(e, node, elNode, resizeHandle.dataset.dir);
   if (editMode && canEdit()) return startMove(e, node, elNode);
   // view mode: no repositioning; click already selects
 }
@@ -616,27 +619,49 @@ function startMove(e, node, elNode) {
   elNode.addEventListener('pointercancel', up);
 }
 
-function startResize(e, node, elNode) {
+function startResize(e, node, elNode, dir) {
   e.preventDefault();
   e.stopPropagation();
   const start = { x: e.clientX, y: e.clientY };
-  const ow = node.w || NOTE_W, oh = node.h || elNode.offsetHeight;
+  const orig = { x: node.x, y: node.y, w: node.w || NOTE_W, h: node.h || elNode.offsetHeight };
+  // true content height, independent of the current min-height — measured once
+  // so the note can be shrunk back after having been grown (the old code read
+  // scrollHeight mid-drag, which made the min "sticky" at the grown size).
+  const prevMin = elNode.style.minHeight;
+  elNode.style.minHeight = '0px';
+  const contentH = Math.max(MIN_H, elNode.scrollHeight);
+  elNode.style.minHeight = prevMin;
   try { elNode.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
   const move = ev => {
-    const nw = clamp(ow + (ev.clientX - start.x) / zoom, MIN_W, MAX_W);
-    const contentH = Math.max(MIN_H, elNode.scrollHeight);
-    const nh = clamp(oh + (ev.clientY - start.y) / zoom, contentH, MAX_H);
-    node.w = Math.round(nw); node.h = Math.round(nh);
+    const dx = (ev.clientX - start.x) / zoom;
+    const dy = (ev.clientY - start.y) / zoom;
+    let { x, y, w, h } = orig;
+    if (dir.includes('e')) w += dx;
+    if (dir.includes('w')) { w -= dx; x += dx; }
+    if (dir.includes('s')) h += dy;
+    if (dir.includes('n')) { h -= dy; y += dy; }
+
+    // width clamp: keep the opposite edge fixed when dragging a left handle
+    if (w < MIN_W) { if (dir.includes('w') && !dir.includes('e')) { x -= MIN_W - w; w = MIN_W; } else w = MIN_W; }
+    else if (w > MAX_W) w = MAX_W;
+
+    // height clamp: never below the true content height
+    if (h < contentH) { if (dir.includes('n') && !dir.includes('s')) { y -= contentH - h; h = contentH; } else h = contentH; }
+    else if (h > MAX_H) h = MAX_H;
+
+    node.x = Math.round(x); node.y = Math.round(y); node.w = Math.round(w); node.h = Math.round(h);
+    elNode.style.left = node.x + 'px';
+    elNode.style.top = node.y + 'px';
     elNode.style.width = node.w + 'px';
     elNode.style.minHeight = node.h + 'px';
-    elNode.style.height = 'auto';
     noteSizes.set(node.id, { w: node.w, h: node.h });
     scheduleEdges();
   };
   const up = async () => {
     elNode.removeEventListener('pointermove', move);
     elNode.removeEventListener('pointerup', up);
-    try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { w: node.w, h: node.h })); }
+    elNode.removeEventListener('pointercancel', up);
+    try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { x: node.x, y: node.y, w: node.w, h: node.h })); }
     catch (err) { toast(err.message, 'error'); }
   };
   elNode.addEventListener('pointermove', move);
