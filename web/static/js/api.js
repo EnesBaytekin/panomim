@@ -34,10 +34,18 @@ export class Api {
       headers['Content-Type'] = 'application/json';
       payload = JSON.stringify(body);
     }
+    // FormData is single-use: clone it before sending so a 401 refresh + retry
+    // can resend the same file (re-sending a consumed FormData sends an empty
+    // body and the server rejects it as "missing file").
+    let formClone = null;
+    if (body instanceof FormData) {
+      formClone = new FormData();
+      for (const [k, v] of body.entries()) formClone.append(k, v);
+    }
     let res = await fetch(path, { method, headers, body: payload, credentials: 'same-origin' });
     if (res.status === 401 && !opts.noAuth && !opts._retried) {
       const ok = await this.ensureRefresh(true);
-      if (ok) return this.req(method, path, body, { ...opts, _retried: true, headers: { ...opts.headers } });
+      if (ok) return this.req(method, path, formClone ?? body, { ...opts, _retried: true, headers: { ...opts.headers } });
     }
     if (!res.ok) {
       let msg = res.statusText;

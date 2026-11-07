@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"path"
@@ -322,8 +323,32 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 
 // --- files ------------------------------------------------------------------------
 
-var allowedImageMimes = map[string]bool{
-	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true, "image/svg+xml": true,
+// sniffImage detects supported image types by magic bytes — robust against a
+// missing or incorrect browser Content-Type (some platforms label photos as
+// application/octet-stream). SVG is detected by its <svg> root element.
+func sniffImage(b []byte) string {
+	switch {
+	case bytes.HasPrefix(b, []byte("\x89PNG\r\n\x1a\n")):
+		return "image/png"
+	case bytes.HasPrefix(b, []byte("\xff\xd8\xff")):
+		return "image/jpeg"
+	case bytes.HasPrefix(b, []byte("GIF87a")), bytes.HasPrefix(b, []byte("GIF89a")):
+		return "image/gif"
+	case len(b) > 12 && bytes.Equal(b[0:4], []byte("RIFF")) && bytes.Equal(b[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	if looksLikeSVG(b) {
+		return "image/svg+xml"
+	}
+	return ""
+}
+
+func looksLikeSVG(b []byte) bool {
+	s := bytes.TrimLeft(b, " \t\r\n\xef\xbb\xbf") // whitespace + UTF-8 BOM
+	if len(s) > 1024 {
+		s = s[:1024]
+	}
+	return bytes.Contains(bytes.ToLower(s), []byte("<svg"))
 }
 
 func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
@@ -338,15 +363,15 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	mime := hdr.Header.Get("Content-Type")
-	if !allowedImageMimes[mime] {
-		httpx.Err(w, 400, "only png/jpeg/gif/webp/svg images allowed")
-		return
-	}
 	boardID := boards.IDFrom(r.Context())
 	data, err := io.ReadAll(file)
 	if err != nil {
 		httpx.Err(w, 400, "read failed")
+		return
+	}
+	mime := sniffImage(data)
+	if mime == "" {
+		httpx.Err(w, 400, "only png/jpeg/gif/webp/svg images allowed")
 		return
 	}
 	u := auth.UserFrom(r.Context())

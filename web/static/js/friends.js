@@ -151,7 +151,7 @@ function renderFriends(list, friends, body, overlay) {
             onclick: async e => {
               e.stopPropagation();
               const ok = await confirmDialog({
-                title: t('friends.removeTitle'),
+                title: t('friends.removeTitle', { name: f.username }),
                 body: t('friends.removeBody', { name: f.username }),
                 confirmText: t('friends.remove'),
                 danger: true,

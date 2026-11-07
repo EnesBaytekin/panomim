@@ -1119,7 +1119,7 @@ a.field-chip:hover { color: var(--accent); }
   --note-ink: hsl(var(--hue) 45% 22%);
   --note-line: hsl(var(--hue) 45% 34% / .3);
   position: absolute;
-  min-width: 120px;
+  min-width: 88px; /* floor well below the JS resize floor so short/narrow notes fit */
   max-width: 640px;
   min-height: 220px; /* square default; grows with content */
   padding-bottom: 6px;

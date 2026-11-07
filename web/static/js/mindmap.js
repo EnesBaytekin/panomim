@@ -9,8 +9,8 @@ import { sendSelect } from './ws.js';
 import { t } from './i18n.js';
 
 const NOTE_W = 220;          // default note width (square side)
-const MIN_W = 150, MAX_W = 640;
-const MIN_H = 220, MAX_H = 560; // min height = square default; never below content
+const MIN_W = 100, MAX_W = 640;
+const MIN_H = 56, MAX_H = 560;  // narrow/short notes allowed; never below content
 
 let viewport = null;  // the clipping container (gets pointer events)
 let canvas = null;    // transformed world (notes + svg)
