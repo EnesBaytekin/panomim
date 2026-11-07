@@ -2,7 +2,7 @@
 // Notes hang on a large pannable/zoomable canvas; edges are gradient cubic
 // beziers that thicken & warm from parent (thin) to child (thick).
 import { api } from './api.js';
-import { el, toast, confirmDialog, colorForUser, debounce } from './ui.js';
+import { el, toast, colorForUser, debounce } from './ui.js';
 import { store, on, nodeChildren, canEdit, isDescendant, setCollapsed, upsertNode, removeNodes } from './store.js';
 import { fieldElement, openFieldEditor, pickAndUpload } from './fields.js';
 import { sendSelect } from './ws.js';
@@ -770,7 +770,6 @@ async function addChildNote(parent) {
 
 function noteMenu(node, anchor) {
   const { pop, close } = openPop(anchor);
-  const kids = nodeChildren(node.id).length;
   const items = [
     menuItem(t('mm.rename'), () => renameNote(node, close)),
     menuItem(t('mm.addChild'), () => { close(); addChildNote(node); }),
@@ -781,50 +780,63 @@ function noteMenu(node, anchor) {
       try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 })); }
       catch (e) { toast(e.message, 'error'); }
     }),
-    kids
-      ? menuItem(t('mm.deleteSubtree'), async () => {
-        close();
-        await deleteNoteFlow(node);
-      }, 'danger')
-      : menuItem(t('mm.delete'), async () => {
-        close();
-        await deleteNoteFlow(node);
-      }, 'danger'),
-    kids > 0 && menuItem(t('mm.deleteOnly'), async () => {
-      close();
-      await deleteOnlyNote(node, false);
-    }, 'danger'),
-    kids > 0 && menuItem(t('mm.deleteKeepChildren'), async () => {
-      close();
-      await deleteOnlyNote(node, true);
-    }, 'danger'),
+    menuItem(t('mm.delete'), () => { close(); deleteNoteDialog(node); }, 'danger'),
   ];
   pop.append(...items.filter(Boolean)); // koşullu öğeler false döner — append metne çevirir
 }
 
-/** Delete just this note: children are reattached to its parent or made roots. */
-async function deleteOnlyNote(node, toRoot) {
+/** Single "delete" entry opens one dialog whose options depend on whether the
+ *  note has children. */
+function deleteNoteDialog(node) {
   const kids = nodeChildren(node.id);
-  const parent = node.parentId ? store.nodes.get(node.parentId) : null;
-  const dest = toRoot
-    ? t('mm.toRoot', { n: kids.length })
-    : t('mm.toParent', { n: kids.length, parent: parent?.title || t('mm.root') });
-  const ok = await confirmDialog({
-    title: t('mm.deleteTitle'),
-    body: t('mm.deleteBody', { title: node.title || t('list.untitled'), dest }),
-    confirmText: t('common.delete'),
-    danger: true,
-  });
-  if (!ok) return;
-  try {
-    const targetParent = toRoot ? 0 : (node.parentId ?? 0);
-    for (const k of kids) {
-      const upd = await api.patch(`/api/nodes/${k.id}`, { parentId: targetParent });
-      upsertNode(upd);
-    }
-    await api.del(`/api/nodes/${node.id}`);
-    removeNodes([node.id]);
-  } catch (e) { toast(e.message, 'error'); }
+  const countAll = list => list.reduce((acc, k) => acc + 1 + countAll(nodeChildren(k.id)), 0);
+  const n = kids.length ? countAll(kids) : 0;
+
+  const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } });
+  const close = () => overlay.remove();
+  const actions = el('div.modal-actions', el('button.btn.ghost', { onclick: close }, t('common.cancel')));
+  const modal = el('div.modal', el('h3.modal-title', null, t('mm.deleteTitle')));
+
+  const doDelete = async mode => {
+    close();
+    try {
+      if (mode === 'subtree') {
+        await api.del(`/api/nodes/${node.id}${kids.length ? '?withChildren=1' : ''}`);
+        const doomed = [node.id];
+        const walk = pid => { for (const c of nodeChildren(pid)) { doomed.push(c.id); walk(c.id); } };
+        walk(node.id);
+        removeNodes(doomed); // emits → mindmap + list view both update
+      } else {
+        const targetParent = mode === 'root' ? 0 : (node.parentId ?? 0);
+        for (const k of kids) {
+          const upd = await api.patch(`/api/nodes/${k.id}`, { parentId: targetParent });
+          upsertNode(upd);
+        }
+        await api.del(`/api/nodes/${node.id}`);
+        removeNodes([node.id]);
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  if (!kids.length) {
+    modal.append(el('div.modal-body', null, t('mm.deleteSingleBody', { title: node.title || t('list.untitled') })), actions);
+    actions.append(el('button.btn.danger', { onclick: () => doDelete('subtree') }, t('common.delete')));
+  } else {
+    modal.append(
+      el('div.modal-body', null, el('strong', null, node.title || t('list.untitled'))),
+      el('div.delete-options',
+        el('button.btn.wide.danger', { onclick: () => doDelete('subtree') }, t('mm.delSubtree', { n })),
+        el('button.btn.wide.ghost', { onclick: () => doDelete('only') }, t('mm.delOnly', { n: kids.length })),
+        el('button.btn.wide.ghost', { onclick: () => doDelete('root') }, t('mm.delOnlyRoot', { n: kids.length })),
+      ),
+      actions,
+    );
+  }
+
+  overlay.append(modal);
+  document.body.append(overlay);
+  const first = modal.querySelector('.delete-options .btn') || modal.querySelector('.btn');
+  first?.focus();
 }
 
 function openPop(anchor, onClose) {
@@ -927,29 +939,6 @@ function colorPicker(node, closeMenu) {
   const colorPreview = el('span.hue-preview', { style: `background:hsl(${node.hue ?? 35} var(--note-sat) var(--note-lum))` });
   pop.append(el('div.pop-title', null, t('mm.colorTitle')), swatches,
     el('div.hue-row', null, slider, colorPreview));
-}
-
-async function deleteNoteFlow(node) {
-  const kids = nodeChildren(node.id);
-  let count = kids.length;
-  const countAll = list => list.reduce((acc, k) => acc + 1 + countAll(nodeChildren(k.id)), 0);
-  if (count > 0) count = countAll(kids);
-  const ok = await confirmDialog({
-    title: t('mm.deleteTitle'),
-    body: count > 0
-      ? t('mm.deleteSubtreeBody', { title: node.title || t('list.untitled'), n: count })
-      : t('mm.deleteSingleBody', { title: node.title || t('list.untitled') }),
-    confirmText: count > 0 ? t('list.deleteAll') : t('common.delete'),
-    danger: true,
-  });
-  if (!ok) return;
-  try {
-    await api.del(`/api/nodes/${node.id}${count > 0 ? '?withChildren=1' : ''}`);
-    const doomed = [node.id];
-    const walk = pid => { for (const n of nodeChildren(pid)) { doomed.push(n.id); walk(n.id); } };
-    walk(node.id);
-    removeNodes(doomed); // emits → mindmap + list view both update
-  } catch (e) { toast(e.message, 'error'); }
 }
 
 function mergeNode(node) {

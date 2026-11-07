@@ -77,20 +77,25 @@ function buildShell() {
     el('button.tab', { dataset: { tab: 'mindmap' }, onclick: () => switchTab('mindmap') }, t('app.tabMindmap')),
   );
 
-  // mindmap toolbar (inside content, above canvas) — grouped so unrelated
-  // controls never dangle; each group hides wholly when it does not apply
+  // mindmap toolbar (inside content, above canvas) — split into two side-by-side
+  // panels: note actions (mode + add) and zoom; each panel hides wholly when it
+  // does not apply, and on mobile the zoom panel wraps below as its own bar.
   const toolbar = el('div.mm-toolbar', { id: 'mm-toolbar' },
-    el('span.tb-group.tb-mode', { dataset: { group: 'mode' } },
-      el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, t('app.editMode')),
+    el('div.tb-panel', { id: 'mm-tb-main' },
+      el('span.tb-group.tb-mode', { dataset: { group: 'mode' } },
+        el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, t('app.editMode')),
+      ),
+      el('span.tb-group', { dataset: { group: 'actions' } },
+        el('button.btn.small.primary', { id: 'mm-add', title: t('app.newNote'), onclick: () => mm.addNoteCentered() }, t('app.addNote')),
+      ),
     ),
-    el('span.tb-group', { dataset: { group: 'actions' } },
-      el('button.btn.small.primary', { id: 'mm-add', title: t('app.newNote'), onclick: () => mm.addNoteCentered() }, t('app.addNote')),
-    ),
-    el('span.tb-group', { dataset: { group: 'zoom' } },
-      el('button.btn.small', { title: t('app.zoomOut'), onclick: () => mm.zoomBy(1 / 1.2) }, '−'),
-      el('button.zoom-label', { id: 'mm-zoom-label', title: t('app.zoomReset'), onclick: () => mm.resetZoom() }, '100%'),
-      el('button.btn.small', { title: t('app.zoomIn'), onclick: () => mm.zoomBy(1.2) }, '+'),
-      el('button.btn.small', { title: t('app.fit'), onclick: () => mm.fit() }, t('app.fit')),
+    el('div.tb-panel', { dataset: { group: 'zoom' } },
+      el('span.tb-group', { dataset: { group: 'zoom' } },
+        el('button.btn.small', { title: t('app.zoomOut'), onclick: () => mm.zoomBy(1 / 1.2) }, '−'),
+        el('button.zoom-label', { id: 'mm-zoom-label', title: t('app.zoomReset'), onclick: () => mm.resetZoom() }, '100%'),
+        el('button.btn.small', { title: t('app.zoomIn'), onclick: () => mm.zoomBy(1.2) }, '+'),
+        el('button.btn.small', { title: t('app.fitTitle'), onclick: () => mm.fit() }, t('app.fit')),
+      ),
     ),
   );
   mm.bindToolbar({
@@ -705,6 +710,7 @@ function toggleEditMode() {
 function updateEditModeUI(on_ = store.editMode) {
   const btn = document.getElementById('mm-edit-toggle');
   const addBtn = document.getElementById('mm-add');
+  const mainPanel = document.getElementById('mm-tb-main');
   const editing = on_ && canEdit();
   if (btn) {
     btn.textContent = editing ? t('app.editMode') : t('app.viewMode');
@@ -712,6 +718,7 @@ function updateEditModeUI(on_ = store.editMode) {
     btn.closest('.tb-group')?.classList.toggle('hidden', !canEdit());
   }
   addBtn?.closest('.tb-group')?.classList.toggle('hidden', !editing);
+  mainPanel?.classList.toggle('hidden', !canEdit());
 }
 
 // --- presence -------------------------------------------------------------------
@@ -763,10 +770,36 @@ function openShareDialog() {
 
   const memberList = el('div.share-list');
   const userInput = el('input.input', { placeholder: t('auth.username') });
+  const suggest = el('div.user-suggest');
+  const searchWrap = el('div.share-search', userInput, suggest);
   const roleSel = el('select.input', null,
     el('option', { value: 'viewer' }, t('common.role.viewer')),
     el('option', { value: 'editor' }, t('common.role.editor')),
   );
+
+  // Live search: as the owner types a username, list matching users to pick from.
+  const runSearch = debounce(async () => {
+    const q = userInput.value.trim();
+    if (!q) { clear(suggest); return; }
+    try {
+      const users = await api.get('/api/users/search?q=' + encodeURIComponent(q));
+      clear(suggest);
+      if (!users.length) {
+        suggest.append(el('div.user-suggest-empty', null, t('friends.noUsersFound')));
+        return;
+      }
+      for (const u of users) {
+        suggest.append(el('button.user-suggest-item', {
+          onclick: () => { userInput.value = u.username; clear(suggest); },
+        },
+          avatar({ userId: u.userId, username: u.username }, 'sm'),
+          el('span', null, u.username),
+        ));
+      }
+    } catch (e) { /* dropdown is best-effort */ }
+  }, 200);
+  userInput.addEventListener('input', runSearch);
+  userInput.addEventListener('blur', () => { setTimeout(() => clear(suggest), 150); });
 
   async function refreshMembers() {
     try {
@@ -803,7 +836,7 @@ function openShareDialog() {
     el('div.modal.wide',
       el('h3.modal-title', null, t('app.shareTitle', { name: b.name })),
       owner && el('div.share-add',
-        userInput,
+        searchWrap,
         roleSel,
         el('button.btn.primary', {
           onclick: async () => {
