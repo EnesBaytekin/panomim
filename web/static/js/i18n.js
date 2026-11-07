@@ -174,6 +174,9 @@ const dict = {
     'friends.removeBody': 'Arkadaş listenden çıkar; ortak panoların paylaşımı etkilenmez.',
     'friends.remove': 'Çıkar',
     'friends.removed': '“{name}” arkadaşlıktan çıkarıldı',
+    'friends.photoTip': 'Fotoğrafı büyüt',
+    'friends.youRole': 'sen: {role}',
+    'friends.friendRole': '{name}: {role}',
 
     // mindmap
     'mm.markUndone': 'yapılmadı',
@@ -375,6 +378,9 @@ const dict = {
     'friends.removeBody': 'They will leave your friends list; shared boards are unaffected.',
     'friends.remove': 'Remove',
     'friends.removed': '“{name}” removed from friends',
+    'friends.photoTip': 'View photo',
+    'friends.youRole': 'you: {role}',
+    'friends.friendRole': '{name}: {role}',
 
     // mindmap
     'mm.markUndone': 'not done',

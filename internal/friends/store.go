@@ -5,6 +5,7 @@ package friends
 import (
 	"database/sql"
 	"errors"
+	"sort"
 	"time"
 )
 
@@ -29,6 +30,13 @@ type SharedBoard struct {
 	OwnerName  string `json:"ownerName"`
 	MyRole     string `json:"myRole"`
 	FriendRole string `json:"friendRole"`
+	Members    []BoardMember `json:"members"`
+}
+
+type BoardMember struct {
+	UserID   int64  `json:"userId"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
 }
 
 type UserHit struct {
@@ -230,7 +238,51 @@ func (s *Store) SharedBoards(meID, friendID int64) ([]SharedBoard, error) {
 		}
 		out = append(out, b)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// attach each shared board's members so the UI can show who's on it
+	for i := range out {
+		members, err := s.boardMembers(out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Members = members
+	}
+	return out, nil
+}
+
+// boardMembers returns a shared board's owner + members, owner first.
+func (s *Store) boardMembers(boardID int64) ([]BoardMember, error) {
+	rows, err := s.DB.Query(`
+		SELECT u.id, u.username, 'owner' AS role FROM boards b
+		JOIN users u ON u.id = b.owner_id WHERE b.id = ?
+		UNION ALL
+		SELECT u.id, u.username, m.role FROM board_members m
+		JOIN users u ON u.id = m.user_id WHERE m.board_id = ?`, boardID, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BoardMember
+	for rows.Next() {
+		var m BoardMember
+		if err := rows.Scan(&m.UserID, &m.Username, &m.Role); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool {
+		oi, oj := out[i].Role == "owner", out[j].Role == "owner"
+		if oi != oj {
+			return oi
+		}
+		return out[i].Username < out[j].Username
+	})
+	return out, nil
 }
 
 // RemoveFriend deletes the friendship between the two users (both rows).

@@ -139,15 +139,17 @@ function renderFriends(list, friends, body, overlay) {
   if (friends.length) {
     list.append(el('div.friends-section', null, t('friends.myFriends', { n: friends.length })));
     for (const f of friends) {
-      list.append(el('div.friend-row',
+      list.append(el('div.friend-row', {
+        onclick: () => showFriend(body, overlay, f),
+      },
         avatar({ userId: f.userId, username: f.username }, 'md'),
         el('span.friend-name', null, f.username,
           f.sharedCount > 0 && el('span.friend-sub', null, t('friends.sharedCount', { n: f.sharedCount }))),
         el('div.friend-actions',
-          el('button.btn.small', { onclick: () => showFriend(body, overlay, f) }, t('friends.open')),
           el('button.icon-btn.remove-friend', {
             title: t('friends.removeFriend'),
-            onclick: async () => {
+            onclick: async e => {
+              e.stopPropagation();
               const ok = await confirmDialog({
                 title: t('friends.removeTitle'),
                 body: t('friends.removeBody', { name: f.username }),
@@ -171,13 +173,18 @@ function renderFriends(list, friends, body, overlay) {
   }
 }
 
-/** Friend detail: shared boards + "share a board". */
+/** Friend detail: profile photo, shared boards with members + "share a board". */
 async function showFriend(body, overlay, friend) {
   clear(body);
+  const bigAvatar = avatar({ userId: friend.userId, username: friend.username }, 'lg');
+  bigAvatar.title = t('friends.photoTip');
+  bigAvatar.addEventListener('click', () => showLargeAvatar(friend));
   body.append(el('div.friends-head',
     el('button.icon-btn', { title: t('friends.back'), onclick: () => showFriends(body, overlay) }, '←'),
-    el('h3.modal-title', null, friend.username),
-    avatar({ userId: friend.userId, username: friend.username }, 'lg'),
+    bigAvatar,
+    el('div.profile-id',
+      el('div.profile-name', null, friend.username),
+    ),
   ));
 
   const sharedList = el('div.friends-body');
@@ -190,10 +197,22 @@ async function showFriend(body, overlay, friend) {
   if (boards.length) {
     sharedList.append(el('div.friends-section', null, t('friends.sharedBoards')));
     for (const b of boards) {
-      sharedList.append(el('div.friend-row.board-row',
-        el('span.board-name', null, b.name, el('span.friend-sub', null, roleText(b, friend.username))),
-        el('div.friend-actions',
-          el('button.btn.small', { onclick: () => { overlay.remove(); emit('open-board', b.id); } }, t('friends.open')),
+      sharedList.append(el('div.shared-board-card',
+        el('div.shared-board-head',
+          el('span.board-name', null, b.name),
+          el('div.friend-actions',
+            el('button.btn.small', { onclick: () => { overlay.remove(); emit('open-board', b.id); } }, t('friends.open')),
+          ),
+        ),
+        el('div.shared-board-roles',
+          el('span.role-pill', null, t('friends.youRole', { role: roleLabel(b.myRole) })),
+          el('span.role-pill', null, t('friends.friendRole', { name: friend.username, role: roleLabel(b.friendRole) })),
+        ),
+        el('div.shared-board-members', null,
+          (b.members || []).map(m => el('span.member-chip', { title: m.username + ' · ' + roleLabel(m.role) },
+            avatar({ userId: m.userId, username: m.username }, 'sm'),
+            el('span.member-name', null, m.username),
+          )),
         ),
       ));
     }
@@ -207,8 +226,18 @@ async function showFriend(body, overlay, friend) {
   ));
 }
 
-function roleText(b, friendName) {
-  return t('friends.roles', { mine: roleLabel(b.myRole), friend: friendName, theirs: roleLabel(b.friendRole) });
+/** Large in-page photo popup for a friend (read-only). */
+function showLargeAvatar(friend) {
+  const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } },
+    el('div.modal.avatar-modal',
+      avatar({ userId: friend.userId, username: friend.username }, 'xl'),
+      el('div.profile-name', null, friend.username),
+      el('div.modal-actions',
+        el('button.btn.ghost', { onclick: () => overlay.remove() }, t('common.close')),
+      ),
+    ),
+  );
+  document.body.append(overlay);
 }
 
 /** Step 1 of sharing: pick one of my (owned) boards. */

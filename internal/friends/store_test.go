@@ -174,6 +174,16 @@ func TestSharedBoards(t *testing.T) {
 	if boards[0].MyRole != "owner" || boards[0].FriendRole != "viewer" {
 		t.Fatalf("roles: %+v", boards[0])
 	}
+	// members are attached (alice owner + bob viewer)
+	if len(boards[0].Members) != 2 {
+		t.Fatalf("expected 2 members, got %d: %+v", len(boards[0].Members), boards[0].Members)
+	}
+	if boards[0].Members[0].Username != "alice" || boards[0].Members[0].Role != "owner" {
+		t.Fatalf("owner member first: %+v", boards[0].Members[0])
+	}
+	if boards[0].Members[1].Username != "bob" || boards[0].Members[1].Role != "viewer" {
+		t.Fatalf("viewer member: %+v", boards[0].Members[1])
+	}
 }
 
 func TestRemoveFriend(t *testing.T) {

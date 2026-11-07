@@ -961,6 +961,43 @@ a.field-chip:hover { color: var(--accent); }
 .friend-row.board-row { padding: 8px 6px; }
 .friend-row.board-row .board-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .friend-row.board-row > span:last-child { color: var(--ink-soft); }
+
+/* shared-board cards on a friend's profile */
+.shared-board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+.shared-board-head { display: flex; align-items: center; gap: 8px; }
+.shared-board-head .board-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 14px; }
+.shared-board-roles { display: flex; flex-wrap: wrap; gap: 5px; }
+.role-pill {
+  font-size: 11px;
+  font-weight: 650;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--hover);
+  color: var(--ink-soft);
+}
+.shared-board-members { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 3px;
+  border-radius: 20px;
+  background: var(--hover);
+  color: var(--ink);
+}
+.member-chip .avatar.sm { width: 20px; height: 20px; font-size: 9px; }
+.member-name { font-size: 12px; font-weight: 600; }
+.friends-head .avatar.lg { cursor: pointer; }
+.friends-head .profile-id { flex: 1; min-width: 0; }
+.friends-head .profile-name { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal-label { display: block; font-size: 12.5px; font-weight: 650; color: var(--ink-soft); margin: 6px 0 6px; }
 .friends-body .dim { margin: 0 0 10px; }
 
