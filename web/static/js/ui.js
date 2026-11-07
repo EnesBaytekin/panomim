@@ -107,7 +107,10 @@ export function popover(anchor, { placement = 'bottom-start', onClose } = {}) {
   };
   const outside = e => { if (!pop.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close(); };
   setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
-  window.addEventListener('resize', close);
+  // On mobile, focusing an input inside the popover opens the on-screen keyboard,
+  // which fires a resize — closing here would drop focus and dismiss the keyboard.
+  // Only close on resize when focus has actually left the popover.
+  window.addEventListener('resize', () => { if (!pop.contains(document.activeElement)) close(); });
   document.body.append(pop);
   const r = anchor.getBoundingClientRect();
   pop.style.visibility = 'hidden';
