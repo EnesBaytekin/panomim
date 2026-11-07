@@ -1,7 +1,7 @@
 // App shell: sidebar (boards), header (presence, actions), tabs, wiring.
 import { api } from './api.js';
 import { el, clear, toast, confirmDialog, promptDialog, avatar, popover, debounce, forgetAvatar, getAvatarURL, fetchAvatar } from './ui.js';
-import { store, on, emit, canEdit, myRole, nodeChildren } from './store.js';
+import { store, on, emit, canEdit, myRole, nodeChildren, markSeen, hasSeen, boardChanged } from './store.js';
 import { initListView } from './listview.js';
 import * as mm from './mindmap.js';
 import { connectBoard, disconnect, resync } from './ws.js';
@@ -19,6 +19,7 @@ let boardTitleEl = null;
 let drawerOverlay = null;
 let pendingFriendCount = 0;   // incoming friend requests (for the sidebar badge)
 let friendBadgeTimer = null;
+let boardChangesTimer = null;
 
 export async function renderApp(container) {
   root = container;
@@ -29,6 +30,8 @@ export async function renderApp(container) {
   refreshFriendBadge();
   if (friendBadgeTimer) clearInterval(friendBadgeTimer);
   friendBadgeTimer = setInterval(refreshFriendBadge, 30000);
+  if (boardChangesTimer) clearInterval(boardChangesTimer);
+  boardChangesTimer = setInterval(() => loadBoards(true), 15000);
 
   const lastId = store.user?.lastBoardId;
   const initial = store.boards.find(b => b.id === lastId) || store.boards[0];
@@ -267,12 +270,15 @@ async function doLogout() {
 
 // --- boards ------------------------------------------------------------------
 
-async function loadBoards() {
+async function loadBoards(silent = false) {
   try {
     store.boards = await api.get('/api/boards');
+    // Boards we've never seen get "seen up to now" so only future changes
+    // (after this first look) light up their dot.
+    for (const b of store.boards) if (!hasSeen(b.id)) markSeen(b.id, b.updatedAt);
     renderBoardList();
   } catch (e) {
-    toast(e.message, 'error');
+    if (!silent) toast(e.message, 'error');
   }
 }
 
@@ -297,6 +303,7 @@ function boardItem(b, currentId) {
     title: b.name + (b.role !== 'owner' ? ` (${t('app.sharedBy', { name: b.ownerName })})` : ''),
   },
     el('span.board-name', null, b.name),
+    boardChanged(b, currentId) && el('span.board-changed', { title: t('app.boardChanged') }),
     b.role === 'owner' && b.sharedCount > 0 && el('span.share-badge', { title: t('app.sharedWithCount', { n: b.sharedCount }) }, '👥' + b.sharedCount),
     b.role !== 'owner' && el('span.share-badge', { title: t('app.yourRole', { role: roleName(b.role) }) }, b.role === 'editor' ? '✎' : '👁'),
   );
@@ -626,6 +633,7 @@ async function openBoard(id) {
     toast(e.message, 'error');
     return;
   }
+  markSeen(id, store.board?.board?.updatedAt);
   store.nodes.clear();
   store.selections.clear();
   store.editMode = false;
@@ -780,7 +788,7 @@ function openShareDialog() {
   // Live search: as the owner types a username, list matching users to pick from.
   const runSearch = debounce(async () => {
     const q = userInput.value.trim();
-    if (!q) { clear(suggest); return; }
+    if (q.length < 3) { clear(suggest); return; }
     try {
       const users = await api.get('/api/users/search?q=' + encodeURIComponent(q));
       clear(suggest);

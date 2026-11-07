@@ -340,6 +340,14 @@ select.input { cursor: pointer; }
 .board-item.active { background: var(--accent-soft); }
 .board-item.active .board-name { font-weight: 700; }
 .board-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-changed {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
 .share-badge {
   flex: none;
   font-size: 11px;

@@ -25,12 +25,34 @@ type Handlers struct {
 
 const maxFileSize = 8 << 20 // 8 MiB
 
+// emit broadcasts a board event and marks the board changed (bumps its
+// updated_at and tags the event with the new value so clients can mark it seen).
 func (h *Handlers) emit(boardID int64, event map[string]any) {
+	h.emitX(boardID, event, true)
+}
+
+// emitMove broadcasts a position-only move without marking the board changed —
+// dragging a note around should not register as a change.
+func (h *Handlers) emitMove(boardID int64, event map[string]any) {
+	h.emitX(boardID, event, false)
+}
+
+func (h *Handlers) emitX(boardID int64, event map[string]any, touch bool) {
 	if h.Emit == nil {
 		return
 	}
-	h.Store.TouchBoard(boardID)
+	if touch {
+		event["updatedAt"] = h.Store.TouchBoard(boardID)
+	}
 	h.Emit(boardID, event)
+}
+
+// positionOnly reports whether a patch changes nothing but a note's canvas
+// position (x/y), which should not count as a board change.
+func positionOnly(req *patchReq) bool {
+	return req.ParentID == nil && req.Position == nil && req.Title == nil && req.Done == nil &&
+		req.Hue == nil && !req.ClearHue && req.W == nil && req.H == nil &&
+		(req.X != nil || req.Y != nil)
 }
 
 // --- node handlers (all under BoardAccess) -------------------------------------
@@ -124,9 +146,14 @@ func (h *Handlers) Patch(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, 500, "update failed")
 		return
 	}
-	h.emit(boardID, map[string]any{
+	event := map[string]any{
 		"type": "node_updated", "id": n.ID, "node": n, "actor": httpx.ClientID(r),
-	})
+	}
+	if positionOnly(&req) {
+		h.emitMove(boardID, event)
+	} else {
+		h.emit(boardID, event)
+	}
 	httpx.JSON(w, 200, n)
 }
 
