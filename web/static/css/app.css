@@ -423,14 +423,25 @@ select.input { cursor: pointer; }
 .profile-name { font-weight: 700; font-size: 14px; }
 .profile-sub { font-size: 11px; color: var(--ink-soft); }
 
-/* büyük profil fotoğrafı popup'ı */
-.avatar-modal {
+/* büyük profil fotoğrafı popup'ı — panel ve foto neredeyse ekran boyutunda,
+   kare oran korunarak; içerik hem masaüstünde hem mobilde sığar */
+.modal.avatar-modal {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   text-align: center;
+  width: min(94vw, 560px);
+  max-height: 92dvh;
+  padding: 22px;
 }
+.avatar-modal .avatar {
+  width: min(100%, 60dvh, 480px);
+  height: auto;
+  aspect-ratio: 1;
+  font-size: clamp(60px, 20vw, 170px);
+}
+.avatar-modal .profile-name { font-size: 18px; }
 .avatar-modal .modal-actions { width: 100%; justify-content: center; }
 .presence-user { display: flex; align-items: center; gap: 8px; }
 .presence-user .avatar { width: 24px; height: 24px; font-size: 10px; }

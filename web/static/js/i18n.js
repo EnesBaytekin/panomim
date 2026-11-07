@@ -490,7 +490,7 @@ export function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('panomim.theme', theme);
   document.querySelectorAll('[data-theme-toggle]').forEach(b => {
-    b.textContent = theme === 'light' ? '☾' : '☀';
+    b.textContent = theme === 'dark' ? '☾' : '☀';
   });
 }
 
