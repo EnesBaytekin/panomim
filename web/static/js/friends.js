@@ -1,7 +1,7 @@
 // Friends system: request/accept flow, friends list, shared boards and the
 // share-to-friend flow. Rendered as a modal overlay with internal screens.
 import { api } from './api.js';
-import { el, clear, toast, avatar } from './ui.js';
+import { el, clear, toast, avatar, confirmDialog, debounce } from './ui.js';
 import { emit } from './store.js';
 import { t } from './i18n.js';
 
@@ -22,23 +22,61 @@ function showFriends(body, overlay) {
   clear(body);
   body.append(el('h3.modal-title', null, t('friends.title')));
 
-  const addInput = el('input.input', { placeholder: t('auth.username'), maxlength: 32, autocapitalize: 'off', autocomplete: 'off' });
+  const addInput = el('input.input', { placeholder: t('friends.searchPlaceholder'), maxlength: 32, autocapitalize: 'off', autocomplete: 'off' });
+  const suggest = el('div.user-suggest');
   const addBtn = el('button.btn.primary', {
     onclick: async () => {
       const uname = addInput.value.trim();
       if (!uname) return;
       addBtn.disabled = true;
       try {
-        const res = await api.post('/api/friends/requests', { username: uname });
-        addInput.value = '';
-        toast(res.autoAccepted ? t('friends.autoAccepted', { name: uname }) : t('friends.requestSent', { name: uname }), 'ok');
-        await refresh();
-      } catch (e) { toast(e.message, 'error'); }
-      finally { addBtn.disabled = false; }
+        await sendRequest(uname);
+      } finally { addBtn.disabled = false; }
     },
   }, t('friends.add'));
   addInput.addEventListener('keydown', e => { if (e.key === 'Enter') addBtn.click(); });
-  body.append(el('div.friends-add', addInput, addBtn));
+  body.append(el('div.friends-add-wrap', el('div.friends-add', addInput, addBtn), suggest));
+
+  // Shared add helper: sends a request by username, clears the input and refreshes.
+  async function sendRequest(uname) {
+    const res = await api.post('/api/friends/requests', { username: uname });
+    addInput.value = '';
+    clear(suggest);
+    toast(res.autoAccepted ? t('friends.autoAccepted', { name: uname }) : t('friends.requestSent', { name: uname }), 'ok');
+    emit('friends-changed');
+    await refresh();
+  }
+
+  // Autocomplete: as you type, list matching existing users to pick from.
+  const runSearch = debounce(async () => {
+    const q = addInput.value.trim();
+    if (!q) { clear(suggest); return; }
+    try {
+      const users = await api.get('/api/users/search?q=' + encodeURIComponent(q));
+      clear(suggest);
+      if (!users.length) {
+        suggest.append(el('div.user-suggest-empty', null, t('friends.noUsersFound')));
+        return;
+      }
+      for (const u of users) {
+        suggest.append(el('button.user-suggest-item', {
+          onclick: async () => {
+            clear(suggest);
+            addInput.value = u.username;
+            addBtn.disabled = true;
+            try { await sendRequest(u.username); }
+            catch (e) { toast(e.message, 'error'); }
+            finally { addBtn.disabled = false; }
+          },
+        },
+          avatar({ userId: u.userId, username: u.username }, 'sm'),
+          el('span', null, u.username),
+        ));
+      }
+    } catch (e) { /* ignore — dropdown is best-effort */ }
+  }, 200);
+  addInput.addEventListener('input', runSearch);
+  addInput.addEventListener('blur', () => { setTimeout(() => clear(suggest), 150); });
 
   const list = el('div.friends-body');
   body.append(list);
@@ -68,13 +106,13 @@ function renderRequests(list, reqs, refresh) {
       el('div.friend-actions',
         el('button.btn.small.primary', {
           onclick: async () => {
-            try { await api.post(`/api/friends/requests/${r.id}/accept`); toast(t('friends.added', { name: r.username }), 'ok'); refresh(); }
+            try { await api.post(`/api/friends/requests/${r.id}/accept`); toast(t('friends.added', { name: r.username }), 'ok'); emit('friends-changed'); refresh(); }
             catch (e) { toast(e.message, 'error'); }
           },
         }, t('friends.accept')),
         el('button.btn.small.ghost', {
           onclick: async () => {
-            try { await api.del(`/api/friends/requests/${r.id}`); refresh(); }
+            try { await api.del(`/api/friends/requests/${r.id}`); emit('friends-changed'); refresh(); }
             catch (e) { toast(e.message, 'error'); }
           },
         }, t('friends.decline')),
@@ -88,7 +126,7 @@ function renderRequests(list, reqs, refresh) {
       el('div.friend-actions',
         el('button.btn.small.ghost', {
           onclick: async () => {
-            try { await api.del(`/api/friends/requests/${r.id}`); refresh(); }
+            try { await api.del(`/api/friends/requests/${r.id}`); emit('friends-changed'); refresh(); }
             catch (e) { toast(e.message, 'error'); }
           },
         }, t('friends.cancel')),
@@ -107,6 +145,24 @@ function renderFriends(list, friends, body, overlay) {
           f.sharedCount > 0 && el('span.friend-sub', null, t('friends.sharedCount', { n: f.sharedCount }))),
         el('div.friend-actions',
           el('button.btn.small', { onclick: () => showFriend(body, overlay, f) }, t('friends.open')),
+          el('button.icon-btn.remove-friend', {
+            title: t('friends.removeFriend'),
+            onclick: async () => {
+              const ok = await confirmDialog({
+                title: t('friends.removeTitle'),
+                body: t('friends.removeBody', { name: f.username }),
+                confirmText: t('friends.remove'),
+                danger: true,
+              });
+              if (!ok) return;
+              try {
+                await api.del(`/api/friends/${f.userId}`);
+                toast(t('friends.removed', { name: f.username }), 'ok');
+                emit('friends-changed');
+                showFriends(body, overlay);
+              } catch (e) { toast(e.message, 'error'); }
+            },
+          }, '✕'),
         ),
       ));
     }

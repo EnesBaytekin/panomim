@@ -17,6 +17,8 @@ let tabBarEl = null;
 let presenceEl = null;
 let boardTitleEl = null;
 let drawerOverlay = null;
+let pendingFriendCount = 0;   // incoming friend requests (for the sidebar badge)
+let friendBadgeTimer = null;
 
 export async function renderApp(container) {
   root = container;
@@ -24,6 +26,9 @@ export async function renderApp(container) {
   buildShell();
   wireStore();
   await loadBoards();
+  refreshFriendBadge();
+  if (friendBadgeTimer) clearInterval(friendBadgeTimer);
+  friendBadgeTimer = setInterval(refreshFriendBadge, 30000);
 
   const lastId = store.user?.lastBoardId;
   const initial = store.boards.find(b => b.id === lastId) || store.boards[0];
@@ -125,11 +130,29 @@ function roleName(role) {
 
 function userFoot() {
   const u = store.user;
+  const friendsBtn = el('button.user-chip.user-friends', {
+    title: pendingFriendCount ? t('app.pendingRequests', { n: pendingFriendCount }) : t('app.friendsLabel'),
+    onclick: () => openFriends(),
+  },
+    el('span.user-friends-ico', null, '👥'),
+    el('span.user-name', null, t('app.friendsLabel')),
+    el('span.flex-spacer'),
+    pendingFriendCount > 0 && el('span.user-badge', null, pendingFriendCount),
+  );
   const chip = el('button.user-chip', { title: t('app.profile'), onclick: e => profileMenu(e.currentTarget) },
     avatar({ userId: u.id, username: u.username }),
     el('span.user-name', null, u.username),
   );
-  return el('div.user-foot', chip);
+  return el('div.user-foot', friendsBtn, chip);
+}
+
+/** Pull the incoming-request count and refresh the sidebar badge. */
+async function refreshFriendBadge() {
+  try {
+    const reqs = await api.get('/api/friends/requests');
+    pendingFriendCount = (reqs.incoming || []).length;
+  } catch { pendingFriendCount = 0; }
+  renderUserFoot();
 }
 
 // --- profile ----------------------------------------------------------------
@@ -148,7 +171,6 @@ function profileMenu(anchor) {
         el('div.profile-sub', null, t('app.clickForPhoto')),
       ),
     ),
-    el('button.menu-item', { onclick: () => { close(); openFriends(); } }, t('app.friends')),
     el('button.menu-item', { onclick: () => { close(); passwordDialog(); } }, t('app.changePassword')),
     el('button.menu-item', { onclick: () => { close(); doLogout(); } }, t('app.signOut')),
   );
@@ -641,4 +663,6 @@ function wireStore() {
   on('selection', () => emit('nodes', 'replace'));
   // friends panel "open this board" navigation (avoids a circular app.js import)
   on('open-board', id => openBoard(id));
+  // friend requests/friends changed → refresh the sidebar badge
+  on('friends-changed', () => refreshFriendBadge());
 }
