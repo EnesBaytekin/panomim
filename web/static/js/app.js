@@ -41,11 +41,11 @@ function buildShell() {
     'data-theme-toggle': '1',
     title: t('app.theme'),
     onclick: toggleTheme,
-  }, currentTheme() === 'light' ? '☾' : '☀');
+  }, currentTheme() === 'dark' ? '☾' : '☀');
   const langBtn = el('button.icon-btn.lang-btn', {
     title: t('app.lang'),
     onclick: toggleLang,
-  }, getLang() === 'tr' ? 'EN' : 'TR');
+  }, getLang() === 'tr' ? 'TR' : 'EN');
 
   sidebarEl = el('aside.sidebar',
     el('div.sidebar-head',
@@ -707,7 +707,7 @@ function updateEditModeUI(on_ = store.editMode) {
   const addBtn = document.getElementById('mm-add');
   const editing = on_ && canEdit();
   if (btn) {
-    btn.textContent = editing ? t('app.viewMode') : t('app.editMode');
+    btn.textContent = editing ? t('app.editMode') : t('app.viewMode');
     btn.classList.toggle('active', editing);
     btn.closest('.tb-group')?.classList.toggle('hidden', !canEdit());
   }
