@@ -1,6 +1,6 @@
 // Realtime websocket client: ticket auth, auto-reconnect, op handling.
 import { api } from './api.js';
-import { store, emit, upsertNode, removeNodes, setNodes } from './store.js';
+import { store, emit, upsertNode, removeNodes, setNodes, markSeen } from './store.js';
 
 let ws = null;
 let boardId = null;
@@ -68,6 +68,10 @@ function scheduleReconnect() {
 
 function handle(msg) {
   const mine = msg.actor === api.clientId;
+  // Any change event carries the board's new updatedAt — mark it seen so the
+  // currently-open board (whether the change is ours or someone else's) never
+  // shows a "changed" dot in the sidebar.
+  if (msg.updatedAt != null) markSeen(boardId, msg.updatedAt);
   switch (msg.type) {
     case 'hello': {
       store.presence.clear();

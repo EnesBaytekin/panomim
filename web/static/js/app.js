@@ -1,7 +1,7 @@
 // App shell: sidebar (boards), header (presence, actions), tabs, wiring.
 import { api } from './api.js';
 import { el, clear, toast, confirmDialog, promptDialog, avatar, popover, debounce, forgetAvatar, getAvatarURL, fetchAvatar } from './ui.js';
-import { store, on, emit, canEdit, myRole, nodeChildren } from './store.js';
+import { store, on, emit, canEdit, myRole, nodeChildren, markSeen, hasSeen, boardChanged } from './store.js';
 import { initListView } from './listview.js';
 import * as mm from './mindmap.js';
 import { connectBoard, disconnect, resync } from './ws.js';
@@ -19,6 +19,7 @@ let boardTitleEl = null;
 let drawerOverlay = null;
 let pendingFriendCount = 0;   // incoming friend requests (for the sidebar badge)
 let friendBadgeTimer = null;
+let boardChangesTimer = null;
 
 export async function renderApp(container) {
   root = container;
@@ -29,6 +30,8 @@ export async function renderApp(container) {
   refreshFriendBadge();
   if (friendBadgeTimer) clearInterval(friendBadgeTimer);
   friendBadgeTimer = setInterval(refreshFriendBadge, 30000);
+  if (boardChangesTimer) clearInterval(boardChangesTimer);
+  boardChangesTimer = setInterval(() => loadBoards(true), 15000);
 
   const lastId = store.user?.lastBoardId;
   const initial = store.boards.find(b => b.id === lastId) || store.boards[0];
@@ -41,11 +44,11 @@ function buildShell() {
     'data-theme-toggle': '1',
     title: t('app.theme'),
     onclick: toggleTheme,
-  }, currentTheme() === 'light' ? '☾' : '☀');
+  }, currentTheme() === 'dark' ? '☾' : '☀');
   const langBtn = el('button.icon-btn.lang-btn', {
     title: t('app.lang'),
     onclick: toggleLang,
-  }, getLang() === 'tr' ? 'EN' : 'TR');
+  }, getLang() === 'tr' ? 'TR' : 'EN');
 
   sidebarEl = el('aside.sidebar',
     el('div.sidebar-head',
@@ -77,20 +80,25 @@ function buildShell() {
     el('button.tab', { dataset: { tab: 'mindmap' }, onclick: () => switchTab('mindmap') }, t('app.tabMindmap')),
   );
 
-  // mindmap toolbar (inside content, above canvas) — grouped so unrelated
-  // controls never dangle; each group hides wholly when it does not apply
+  // mindmap toolbar (inside content, above canvas) — split into two side-by-side
+  // panels: note actions (mode + add) and zoom; each panel hides wholly when it
+  // does not apply, and on mobile the zoom panel wraps below as its own bar.
   const toolbar = el('div.mm-toolbar', { id: 'mm-toolbar' },
-    el('span.tb-group.tb-mode', { dataset: { group: 'mode' } },
-      el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, t('app.editMode')),
+    el('div.tb-panel', { id: 'mm-tb-main' },
+      el('span.tb-group.tb-mode', { dataset: { group: 'mode' } },
+        el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, t('app.editMode')),
+      ),
+      el('span.tb-group', { dataset: { group: 'actions' } },
+        el('button.btn.small.primary', { id: 'mm-add', title: t('app.newNote'), onclick: () => mm.addNoteCentered() }, t('app.addNote')),
+      ),
     ),
-    el('span.tb-group', { dataset: { group: 'actions' } },
-      el('button.btn.small.primary', { id: 'mm-add', title: t('app.newNote'), onclick: () => mm.addNoteCentered() }, t('app.addNote')),
-    ),
-    el('span.tb-group', { dataset: { group: 'zoom' } },
-      el('button.btn.small', { title: t('app.zoomOut'), onclick: () => mm.zoomBy(1 / 1.2) }, '−'),
-      el('button.zoom-label', { id: 'mm-zoom-label', title: t('app.zoomReset'), onclick: () => mm.resetZoom() }, '100%'),
-      el('button.btn.small', { title: t('app.zoomIn'), onclick: () => mm.zoomBy(1.2) }, '+'),
-      el('button.btn.small', { title: t('app.fit'), onclick: () => mm.fit() }, t('app.fit')),
+    el('div.tb-panel', { dataset: { group: 'zoom' } },
+      el('span.tb-group', { dataset: { group: 'zoom' } },
+        el('button.btn.small', { title: t('app.zoomOut'), onclick: () => mm.zoomBy(1 / 1.2) }, '−'),
+        el('button.zoom-label', { id: 'mm-zoom-label', title: t('app.zoomReset'), onclick: () => mm.resetZoom() }, '100%'),
+        el('button.btn.small', { title: t('app.zoomIn'), onclick: () => mm.zoomBy(1.2) }, '+'),
+        el('button.btn.small', { title: t('app.fitTitle'), onclick: () => mm.fit() }, t('app.fit')),
+      ),
     ),
   );
   mm.bindToolbar({
@@ -262,12 +270,15 @@ async function doLogout() {
 
 // --- boards ------------------------------------------------------------------
 
-async function loadBoards() {
+async function loadBoards(silent = false) {
   try {
     store.boards = await api.get('/api/boards');
+    // Boards we've never seen get "seen up to now" so only future changes
+    // (after this first look) light up their dot.
+    for (const b of store.boards) if (!hasSeen(b.id)) markSeen(b.id, b.updatedAt);
     renderBoardList();
   } catch (e) {
-    toast(e.message, 'error');
+    if (!silent) toast(e.message, 'error');
   }
 }
 
@@ -292,6 +303,7 @@ function boardItem(b, currentId) {
     title: b.name + (b.role !== 'owner' ? ` (${t('app.sharedBy', { name: b.ownerName })})` : ''),
   },
     el('span.board-name', null, b.name),
+    boardChanged(b, currentId) && el('span.board-changed', { title: t('app.boardChanged') }),
     b.role === 'owner' && b.sharedCount > 0 && el('span.share-badge', { title: t('app.sharedWithCount', { n: b.sharedCount }) }, '👥' + b.sharedCount),
     b.role !== 'owner' && el('span.share-badge', { title: t('app.yourRole', { role: roleName(b.role) }) }, b.role === 'editor' ? '✎' : '👁'),
   );
@@ -621,6 +633,7 @@ async function openBoard(id) {
     toast(e.message, 'error');
     return;
   }
+  markSeen(id, store.board?.board?.updatedAt);
   store.nodes.clear();
   store.selections.clear();
   store.editMode = false;
@@ -705,13 +718,15 @@ function toggleEditMode() {
 function updateEditModeUI(on_ = store.editMode) {
   const btn = document.getElementById('mm-edit-toggle');
   const addBtn = document.getElementById('mm-add');
+  const mainPanel = document.getElementById('mm-tb-main');
   const editing = on_ && canEdit();
   if (btn) {
-    btn.textContent = editing ? t('app.viewMode') : t('app.editMode');
+    btn.textContent = editing ? t('app.editMode') : t('app.viewMode');
     btn.classList.toggle('active', editing);
     btn.closest('.tb-group')?.classList.toggle('hidden', !canEdit());
   }
   addBtn?.closest('.tb-group')?.classList.toggle('hidden', !editing);
+  mainPanel?.classList.toggle('hidden', !canEdit());
 }
 
 // --- presence -------------------------------------------------------------------
@@ -763,10 +778,36 @@ function openShareDialog() {
 
   const memberList = el('div.share-list');
   const userInput = el('input.input', { placeholder: t('auth.username') });
+  const suggest = el('div.user-suggest');
+  const searchWrap = el('div.share-search', userInput, suggest);
   const roleSel = el('select.input', null,
     el('option', { value: 'viewer' }, t('common.role.viewer')),
     el('option', { value: 'editor' }, t('common.role.editor')),
   );
+
+  // Live search: as the owner types a username, list matching users to pick from.
+  const runSearch = debounce(async () => {
+    const q = userInput.value.trim();
+    if (q.length < 3) { clear(suggest); return; }
+    try {
+      const users = await api.get('/api/users/search?q=' + encodeURIComponent(q));
+      clear(suggest);
+      if (!users.length) {
+        suggest.append(el('div.user-suggest-empty', null, t('friends.noUsersFound')));
+        return;
+      }
+      for (const u of users) {
+        suggest.append(el('button.user-suggest-item', {
+          onclick: () => { userInput.value = u.username; clear(suggest); },
+        },
+          avatar({ userId: u.userId, username: u.username }, 'sm'),
+          el('span', null, u.username),
+        ));
+      }
+    } catch (e) { /* dropdown is best-effort */ }
+  }, 200);
+  userInput.addEventListener('input', runSearch);
+  userInput.addEventListener('blur', () => { setTimeout(() => clear(suggest), 150); });
 
   async function refreshMembers() {
     try {
@@ -803,7 +844,7 @@ function openShareDialog() {
     el('div.modal.wide',
       el('h3.modal-title', null, t('app.shareTitle', { name: b.name })),
       owner && el('div.share-add',
-        userInput,
+        searchWrap,
         roleSel,
         el('button.btn.primary', {
           onclick: async () => {

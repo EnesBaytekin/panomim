@@ -50,7 +50,7 @@ function showFriends(body, overlay) {
   // Autocomplete: as you type, list matching existing users to pick from.
   const runSearch = debounce(async () => {
     const q = addInput.value.trim();
-    if (!q) { clear(suggest); return; }
+    if (q.length < 3) { clear(suggest); return; }
     try {
       const users = await api.get('/api/users/search?q=' + encodeURIComponent(q));
       clear(suggest);
@@ -151,7 +151,7 @@ function renderFriends(list, friends, body, overlay) {
             onclick: async e => {
               e.stopPropagation();
               const ok = await confirmDialog({
-                title: t('friends.removeTitle'),
+                title: t('friends.removeTitle', { name: f.username }),
                 body: t('friends.removeBody', { name: f.username }),
                 confirmText: t('friends.remove'),
                 danger: true,

@@ -15,12 +15,12 @@ export function renderAuth(root, onAuthed) {
   const langBtn = el('button.icon-btn.lang-btn', {
     title: t('app.lang'),
     onclick: toggleLang,
-  }, getLang() === 'tr' ? 'EN' : 'TR');
+  }, getLang() === 'tr' ? 'TR' : 'EN');
   const themeBtn = el('button.icon-btn', {
     'data-theme-toggle': '1',
     title: t('app.theme'),
     onclick: toggleTheme,
-  }, currentTheme() === 'light' ? '☾' : '☀');
+  }, currentTheme() === 'dark' ? '☾' : '☀');
   const controls = el('div.auth-controls', null, langBtn, themeBtn);
 
   const userInput = el('input.input', { type: 'text', autocomplete: 'username', placeholder: t('auth.username'), spellcheck: 'false' });

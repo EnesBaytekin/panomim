@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"path"
@@ -24,12 +25,34 @@ type Handlers struct {
 
 const maxFileSize = 8 << 20 // 8 MiB
 
+// emit broadcasts a board event and marks the board changed (bumps its
+// updated_at and tags the event with the new value so clients can mark it seen).
 func (h *Handlers) emit(boardID int64, event map[string]any) {
+	h.emitX(boardID, event, true)
+}
+
+// emitMove broadcasts a position-only move without marking the board changed —
+// dragging a note around should not register as a change.
+func (h *Handlers) emitMove(boardID int64, event map[string]any) {
+	h.emitX(boardID, event, false)
+}
+
+func (h *Handlers) emitX(boardID int64, event map[string]any, touch bool) {
 	if h.Emit == nil {
 		return
 	}
-	h.Store.TouchBoard(boardID)
+	if touch {
+		event["updatedAt"] = h.Store.TouchBoard(boardID)
+	}
 	h.Emit(boardID, event)
+}
+
+// positionOnly reports whether a patch changes nothing but a note's canvas
+// position (x/y), which should not count as a board change.
+func positionOnly(req *patchReq) bool {
+	return req.ParentID == nil && req.Position == nil && req.Title == nil && req.Done == nil &&
+		req.Hue == nil && !req.ClearHue && req.W == nil && req.H == nil &&
+		(req.X != nil || req.Y != nil)
 }
 
 // --- node handlers (all under BoardAccess) -------------------------------------
@@ -123,9 +146,14 @@ func (h *Handlers) Patch(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, 500, "update failed")
 		return
 	}
-	h.emit(boardID, map[string]any{
+	event := map[string]any{
 		"type": "node_updated", "id": n.ID, "node": n, "actor": httpx.ClientID(r),
-	})
+	}
+	if positionOnly(&req) {
+		h.emitMove(boardID, event)
+	} else {
+		h.emit(boardID, event)
+	}
 	httpx.JSON(w, 200, n)
 }
 
@@ -322,8 +350,32 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 
 // --- files ------------------------------------------------------------------------
 
-var allowedImageMimes = map[string]bool{
-	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true, "image/svg+xml": true,
+// sniffImage detects supported image types by magic bytes — robust against a
+// missing or incorrect browser Content-Type (some platforms label photos as
+// application/octet-stream). SVG is detected by its <svg> root element.
+func sniffImage(b []byte) string {
+	switch {
+	case bytes.HasPrefix(b, []byte("\x89PNG\r\n\x1a\n")):
+		return "image/png"
+	case bytes.HasPrefix(b, []byte("\xff\xd8\xff")):
+		return "image/jpeg"
+	case bytes.HasPrefix(b, []byte("GIF87a")), bytes.HasPrefix(b, []byte("GIF89a")):
+		return "image/gif"
+	case len(b) > 12 && bytes.Equal(b[0:4], []byte("RIFF")) && bytes.Equal(b[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	if looksLikeSVG(b) {
+		return "image/svg+xml"
+	}
+	return ""
+}
+
+func looksLikeSVG(b []byte) bool {
+	s := bytes.TrimLeft(b, " \t\r\n\xef\xbb\xbf") // whitespace + UTF-8 BOM
+	if len(s) > 1024 {
+		s = s[:1024]
+	}
+	return bytes.Contains(bytes.ToLower(s), []byte("<svg"))
 }
 
 func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
@@ -338,15 +390,15 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	mime := hdr.Header.Get("Content-Type")
-	if !allowedImageMimes[mime] {
-		httpx.Err(w, 400, "only png/jpeg/gif/webp/svg images allowed")
-		return
-	}
 	boardID := boards.IDFrom(r.Context())
 	data, err := io.ReadAll(file)
 	if err != nil {
 		httpx.Err(w, 400, "read failed")
+		return
+	}
+	mime := sniffImage(data)
+	if mime == "" {
+		httpx.Err(w, 400, "only png/jpeg/gif/webp/svg images allowed")
 		return
 	}
 	u := auth.UserFrom(r.Context())

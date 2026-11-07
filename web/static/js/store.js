@@ -96,3 +96,27 @@ export function canEdit() {
   const r = myRole();
   return r === 'owner' || r === 'editor';
 }
+
+// --- "changed" markers for the sidebar board list --------------------------------
+// seen maps boardId -> the board.updatedAt value the user last saw. A board whose
+// updatedAt has advanced past this (and is not currently open) shows a dot.
+const seen = (() => {
+  try { return JSON.parse(localStorage.getItem('panomim.seen') || '{}'); } catch { return {}; }
+})();
+
+export function markSeen(boardId, updatedAt) {
+  if (boardId == null || updatedAt == null) return;
+  seen[boardId] = updatedAt;
+  try { localStorage.setItem('panomim.seen', JSON.stringify(seen)); } catch {}
+}
+
+export function hasSeen(boardId) {
+  return seen[boardId] != null;
+}
+
+export function boardChanged(b, currentId) {
+  if (!b || b.id === currentId) return false;
+  const last = seen[b.id];
+  if (last == null) return false;
+  return (b.updatedAt || 0) > last;
+}

@@ -350,9 +350,11 @@ func (s *Store) Delete(nodeID int64) error {
 	return nil
 }
 
-// TouchBoard bumps the board's updated_at.
-func (s *Store) TouchBoard(boardID int64) {
-	s.DB.Exec(`UPDATE boards SET updated_at = ? WHERE id = ?`, time.Now().Unix(), boardID)
+// TouchBoard bumps the board's updated_at and returns the new timestamp.
+func (s *Store) TouchBoard(boardID int64) int64 {
+	now := time.Now().Unix()
+	s.DB.Exec(`UPDATE boards SET updated_at = ? WHERE id = ?`, now, boardID)
+	return now
 }
 
 // --- fields -------------------------------------------------------------------

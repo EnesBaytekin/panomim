@@ -129,11 +129,12 @@ func (h *Handlers) Rename(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, 400, "name must be 1-80 characters")
 		return
 	}
-	if err := h.Store.Rename(IDFrom(r.Context()), req.Name); err != nil {
+	ts, err := h.Store.Rename(IDFrom(r.Context()), req.Name)
+	if err != nil {
 		httpx.Err(w, 500, "rename failed")
 		return
 	}
-	h.notify(r, "board_renamed", map[string]any{"id": IDFrom(r.Context()), "name": req.Name})
+	h.notify(r, "board_renamed", map[string]any{"id": IDFrom(r.Context()), "name": req.Name, "updatedAt": ts})
 	httpx.JSON(w, 200, map[string]bool{"ok": true})
 }
 

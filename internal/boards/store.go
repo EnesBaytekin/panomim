@@ -182,15 +182,16 @@ func (s *Store) RoleOf(boardID, userID int64) (Role, error) {
 	return Role(role), err
 }
 
-func (s *Store) Rename(boardID int64, name string) error {
-	res, err := s.DB.Exec(`UPDATE boards SET name = ?, updated_at = ? WHERE id = ?`, name, time.Now().Unix(), boardID)
+func (s *Store) Rename(boardID int64, name string) (int64, error) {
+	now := time.Now().Unix()
+	res, err := s.DB.Exec(`UPDATE boards SET name = ?, updated_at = ? WHERE id = ?`, name, now, boardID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
+		return 0, ErrNotFound
 	}
-	return nil
+	return now, nil
 }
 
 func (s *Store) Delete(boardID int64) error {

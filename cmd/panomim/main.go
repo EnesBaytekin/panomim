@@ -102,7 +102,10 @@ func run() error {
 		Addr:              cfg.Addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// No IdleTimeout: closing idle keep-alive connections on a fixed delay
+		// caused intermittent "Failed to fetch" — a browser can reuse a connection
+		// the server has just closed, and non-idempotent requests (upload/rename)
+		// are not auto-retried by the browser. Let clients manage connection reuse.
 	}
 
 	// --- listener (plain http | autocert | self-signed/explicit tls) ---
