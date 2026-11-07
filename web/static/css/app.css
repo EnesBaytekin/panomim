@@ -863,6 +863,56 @@ a.field-chip:hover { color: var(--accent); }
 .modal-field { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .modal-field .input { width: 100%; }
 
+/* --- markdown import/export panel ------------------------------------------- */
+.modal.md-modal { width: min(760px, 100%); max-height: min(86dvh, 680px); }
+.md-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.md-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.md-text {
+  width: 100%;
+  min-height: 230px;
+  resize: vertical;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  white-space: pre;
+  overflow: auto;
+}
+.md-text:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.md-text[readonly] { color: var(--ink-soft); }
+.md-readonly-note { font-size: 12px; color: var(--ink-soft); margin-bottom: 8px; }
+.md-file { align-self: flex-start; }
+.md-prev-head { display: flex; gap: 6px; align-items: baseline; font-size: 13px; font-weight: 700; color: var(--ink); }
+.md-count { font-size: 12px; font-weight: 400; color: var(--ink-soft); }
+.md-preview {
+  min-height: 230px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+}
+.md-preview .dim { font-size: 13px; }
+.md-preview-tree { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.md-prev-node { display: flex; align-items: baseline; gap: 6px; padding-left: calc(var(--d, 0) * 14px); color: var(--ink); }
+.md-prev-chk { color: var(--accent); flex: none; }
+.md-prev-title { font-weight: 600; overflow-wrap: anywhere; }
+.md-prev-field { display: flex; align-items: baseline; gap: 6px; padding-left: calc(var(--d, 0) * 14px); color: var(--ink-soft); }
+.md-prev-ico { flex: none; }
+.md-prev-type { flex: none; font-size: 11px; font-weight: 650; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+.md-prev-val { overflow-wrap: anywhere; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+@media (max-width: 560px) {
+  .md-body { grid-template-columns: 1fr; }
+  .md-text { min-height: 140px; }
+  .md-preview { min-height: 120px; max-height: 200px; }
+}
+
 .share-add { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .share-add .input { width: auto; min-width: 130px; }
 .share-add .input:first-child { flex: 1 1 200px; }

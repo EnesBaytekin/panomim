@@ -205,6 +205,23 @@ const dict = {
     'mm.defaultColor': 'varsayılan',
     'mm.hue': 'ton {h}',
     'mm.root': 'kök',
+
+    // markdown
+    'md.importTitle': 'Markdown içe aktar',
+    'md.exportTitle': 'Markdown dışa aktar',
+    'md.pasteLabel': 'Markdown yapıştır',
+    'md.pastePlaceholder': 'Markdown metnini buraya yapıştır…',
+    'md.chooseFile': 'Dosya seç',
+    'md.preview': 'Önizleme',
+    'md.previewHint': 'Metin yapıştırınca oluşacak notlar burada görünür.',
+    'md.nothing': 'Ayrıştırılabilir içerik yok.',
+    'md.nodes': 'not',
+    'md.fields': 'alan',
+    'md.import': 'İçe aktar',
+    'md.copy': 'Kopyala',
+    'md.download': 'İndir (.md)',
+    'md.copied': 'Kopyalandı',
+    'md.readonly': 'Düzenleme kapalı',
   },
 
   en: {
@@ -409,6 +426,23 @@ const dict = {
     'mm.defaultColor': 'default',
     'mm.hue': 'hue {h}',
     'mm.root': 'root',
+
+    // markdown
+    'md.importTitle': 'Import markdown',
+    'md.exportTitle': 'Export markdown',
+    'md.pasteLabel': 'Paste markdown',
+    'md.pastePlaceholder': 'Paste markdown text here…',
+    'md.chooseFile': 'Choose file',
+    'md.preview': 'Preview',
+    'md.previewHint': 'Notes that will be created appear here once you paste text.',
+    'md.nothing': 'Nothing parseable yet.',
+    'md.nodes': 'notes',
+    'md.fields': 'fields',
+    'md.import': 'Import',
+    'md.copy': 'Copy',
+    'md.download': 'Download (.md)',
+    'md.copied': 'Copied',
+    'md.readonly': 'Read-only',
   },
 };
 

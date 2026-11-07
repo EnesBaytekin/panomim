@@ -344,87 +344,273 @@ function boardMenu(anchor) {
 }
 
 // --- markdown export / import -------------------------------------------------
-// Dışa aktarım: ağaç, iç içe madde işaretleri olarak yazılır (`- [x]` done).
-// İçe aktarım: aynı format ayrıştırılır; mevcut verilere dokunmadan her üst
-// seviye madde yeni bir kök not olarak eklenir.
+// Dışa aktarım: ağaç, iç içe madde işaretleri olarak yazılır; bir notun ek
+// alanları altına `- [tür] değer` satırları olarak konur. İçe aktarım aynı
+// formatı okur; link/tarih/saat/görsel gibi alanlar uygulamadaki ek alanlara
+// dönüştürülür. Her iki panel de monospace bir metin kutusuyla çalışır.
+
+const FIELD_ICON = { text: '✎', date: '📅', time: '🕑', datetime: '📅', link: '🔗', image: '🖼' };
+const FIELD_LABEL = { text: 'field.note', date: 'field.date', time: 'field.time', datetime: 'field.datetime', link: 'field.link', image: 'field.image' };
 
 function mdEscape(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
 
-function exportMarkdown() {
+// A note's displayed title comes from its title, or (when empty) its first
+// non-empty text field — mirroring mindmap.js so export reads like the UI.
+function noteTitleField(node) {
+  if (node.title) return null;
+  return node.fields.find(f => f.type === 'text' && (f.value || '').trim()) || null;
+}
+function noteMainText(node) {
+  return node.title || (noteTitleField(node)?.value || '');
+}
+function noteBodyFields(node) {
+  const title = noteTitleField(node);
+  return node.fields.filter(f => f !== title && (f.type !== 'text' || (f.value || '').trim()));
+}
+
+function fieldLine(f) {
+  if (f.type === 'image') return `[image] file:${f.value}`;
+  return `[${f.type}] ${mdEscape(f.value)}`;
+}
+
+/** Build the board's markdown: nodes as `- [ ]`/`- [x]` lines, fields as
+ *  indented `- [type] value` lines. Returns '' when the board is empty. */
+function buildMarkdown() {
   const b = store.board?.board;
-  if (!b) return;
+  if (!b) return '';
   const lines = [];
   const walk = (id, depth) => {
     for (const n of nodeChildren(id)) {
-      lines.push(`${'  '.repeat(depth)}- [${n.done ? 'x' : ' '}] ${mdEscape(n.title)}`);
+      lines.push(`${'  '.repeat(depth)}- [${n.done ? 'x' : ' '}] ${mdEscape(noteMainText(n)) || t('list.untitled')}`);
+      for (const f of noteBodyFields(n)) lines.push(`${'  '.repeat(depth + 1)}- ${fieldLine(f)}`);
       walk(n.id, depth + 1);
     }
   };
   walk(null, 0);
-  if (!lines.length) { toast(t('app.noNotesToExport'), 'error'); return; }
-  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/markdown;charset=utf-8' });
-  const a = el('a', { href: URL.createObjectURL(blob), download: `${mdEscape(b.name) || 'pano'}.md` });
+  return lines.length ? lines.join('\n') + '\n' : '';
+}
+
+function exportMarkdown() {
+  const b = store.board?.board;
+  if (!b) return;
+  const md = buildMarkdown();
+  if (!md) { toast(t('app.noNotesToExport'), 'error'); return; }
+
+  const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } },
+    el('div.modal.md-modal',
+      el('h3.modal-title', null, t('md.exportTitle')),
+      el('div.md-readonly-note', null, t('md.readonly')),
+      mdTextarea(md, true),
+      el('div.modal-actions',
+        el('button.btn.ghost', { onclick: () => overlay.remove() }, t('common.close')),
+        el('button.btn', { onclick: () => copyMarkdown(md) }, t('md.copy')),
+        el('button.btn.primary', { onclick: () => downloadMarkdown(md, b.name) }, t('md.download')),
+      ),
+    ),
+  );
+  document.body.append(overlay);
+}
+
+function copyMarkdown(md) {
+  const done = () => toast(t('md.copied'), 'ok');
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(md).then(done).catch(() => legacyCopy(md, done));
+  } else legacyCopy(md, done);
+}
+
+function legacyCopy(text, done) {
+  const ta = el('textarea', { style: 'position:fixed;left:-9999px;top:0' });
+  ta.value = text;
+  document.body.append(ta);
+  ta.focus();
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch { /* ignore */ }
+  ta.remove();
+}
+
+function downloadMarkdown(md, name) {
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: `${mdEscape(name) || 'pano'}.md` });
   document.body.append(a);
   a.click();
   a.remove();
 }
 
-async function importMarkdown() {
+function importMarkdown() {
   const b = store.board?.board;
   if (!b) return;
   if (!canEdit()) { toast(t('app.noEditPerm'), 'error'); return; }
-  const inp = el('input', { type: 'file', accept: '.md,.markdown,.txt,text/markdown,text/plain' });
-  inp.onchange = async () => {
-    const file = inp.files[0];
-    if (!file) return;
-    const items = parseMarkdownOutline(await file.text());
-    if (!items.length) { toast(t('app.noMarkdownItems'), 'error'); return; }
+
+  const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } },
+    el('div.modal.md-modal',
+      el('h3.modal-title', null, t('md.importTitle')),
+      el('div.md-body',
+        el('div.md-col',
+          el('label.modal-label', null, t('md.pasteLabel')),
+          mdTextarea(),
+          el('button.btn.small.md-file', { onclick: () => pickMarkdownFile(text => setText(text)) }, t('md.chooseFile')),
+        ),
+        el('div.md-col',
+          el('div.md-prev-head', null, t('md.preview'), el('span.dim.md-count')),
+          el('div.md-preview'),
+        ),
+      ),
+      el('div.modal-actions',
+        el('button.btn.ghost', { onclick: () => overlay.remove() }, t('common.cancel')),
+        el('button.btn.primary', { onclick: doImport }, t('md.import')),
+      ),
+    ),
+  );
+  document.body.append(overlay);
+
+  const ta = overlay.querySelector('textarea.md-text');
+  const preview = overlay.querySelector('.md-preview');
+  const countEl = overlay.querySelector('.md-count');
+  const importBtn = overlay.querySelector('.btn.primary');
+  let current = [];
+
+  function setText(text) { ta.value = text; update(); }
+
+  function update() {
+    current = parseMarkdown(ta.value);
+    clear(preview);
+    if (!current.length) {
+      preview.append(el('div.dim', null, ta.value.trim() ? t('md.nothing') : t('md.previewHint')));
+      countEl.textContent = '';
+      importBtn.disabled = true;
+      return;
+    }
+    const { tree, nodes, fields } = renderPreview(current);
+    preview.append(tree);
+    countEl.textContent = `· ${nodes} ${t('md.nodes')} · ${fields} ${t('md.fields')}`;
+    importBtn.disabled = false;
+  }
+
+  ta.addEventListener('input', update);
+  update();
+
+  async function doImport() {
+    if (!current.length) return;
+    importBtn.disabled = true;
     let created = 0, failed = 0;
     const walk = async (list, parentId, x, y) => {
       let i = 0;
       for (const it of list) {
         try {
           const node = await api.post(`/api/boards/${b.id}/nodes`, {
-            parentId, title: it.title.slice(0, 500), x: x + (parentId ? 250 : 0), y: y + i * 46,
+            parentId, title: (it.title || '').slice(0, 500), x: x + (parentId ? 250 : 0), y: y + i * 46,
           });
           created++;
-          if (it.done) {
-            try { await api.patch(`/api/nodes/${node.id}/done`, { done: true }); } catch {}
+          if (it.done) { try { await api.patch(`/api/nodes/${node.id}/done`, { done: true }); } catch {} }
+          for (const f of it.fields) {
+            try { await api.post(`/api/nodes/${node.id}/fields`, { type: f.type, value: f.value }); } catch {}
           }
-          if (it.children.length) await walk(it.children, node.id, node.x, node.y - i * 0);
+          if (it.children.length) await walk(it.children, node.id, node.x, node.y);
         } catch { failed++; }
         i++;
       }
     };
-    toast(t('app.importing', { n: items.length }));
-    await walk(items, null, 60, 60);
-    await resync(); // single refresh: imported nodes land with server positions
+    toast(t('app.importing', { n: current.length }));
+    await walk(current, null, 60, 60);
+    await resync();
+    overlay.remove();
     toast(failed ? t('app.importResultFail', { ok: created, fail: failed }) : t('app.importResult', { n: created }), failed ? 'error' : 'ok');
+  }
+}
+
+function pickMarkdownFile(cb) {
+  const inp = el('input', { type: 'file', accept: '.md,.markdown,.txt,text/markdown,text/plain' });
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    try { cb(await file.text()); } catch (e) { toast(e.message, 'error'); }
   };
   inp.click();
 }
 
-/** Parse a markdown outline into {title, done, children[]} roots.
- *  Understands -, *, +, numbered lists, [x]/[ ] checkboxes and # headings;
- *  indentation (2 spaces or 1 tab per level) builds the hierarchy. */
-function parseMarkdownOutline(text) {
+function mdTextarea(value = '', readonly = false) {
+  const ta = el('textarea.md-text', { spellcheck: false, ...(readonly ? {} : { placeholder: t('md.pastePlaceholder') }) });
+  if (readonly) ta.setAttribute('readonly', '');
+  ta.value = value;
+  return ta;
+}
+
+/** Parse markdown into a node tree: {title, done, fields:[{type,value}], children[]}.
+ *  Nodes are `- [ ] title`, `- [x] title`, plain bullets or `#` headings;
+ *  fields are indented `- [type] value` lines (text/date/time/datetime/link/image).
+ *  Images only round-trip when exported as `file:<id>`. */
+function parseMarkdown(text) {
   const roots = [];
-  const stack = [{ depth: -1, children: roots }];
+  const stack = [{ depth: -1, node: { fields: [], children: roots } }];
   for (const raw of text.split(/\r?\n/)) {
-    if (!raw.trim() || raw.trim() === '---') continue;
-    const heading = raw.match(/^#{1,6}\s+(.*)$/);
-    const m = raw.match(/^(\s*)(?:[-*+]\s+|\d+[.)]\s+)?(.*)$/);
-    const title = mdEscape(heading ? heading[1] : m[2].replace(/^\[([ xX])\]\s*/, ''));
+    const line = raw.replace(/\t/g, '  ');
+    if (!line.trim() || line.trim() === '---') continue;
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) {
+      const title = mdEscape(heading[1]);
+      if (!title) continue;
+      stack.length = 1; // headings are top-level nodes
+      const node = { title, done: false, fields: [], children: [] };
+      stack[0].node.children.push(node);
+      stack.push({ depth: 0, node });
+      continue;
+    }
+    const bullet = line.match(/^(\s*)(?:[-*+]\s+|\d+[.)]\s+)(.*)$/);
+    if (!bullet) continue;
+    const depth = Math.floor(bullet[1].length / 2);
+    let rest = bullet[2];
+    let done = false;
+    const cb = rest.match(/^\[([ xX])\]\s*(.*)$/);
+    if (cb) { done = cb[1].toLowerCase() === 'x'; rest = cb[2]; }
+    const field = rest.match(/^\[(text|date|time|datetime|link|image)\]\s+(.*)$/);
+    // find the parent by popping entries at or deeper than this depth
+    while (stack.length > 1 && stack[stack.length - 1].depth >= depth) stack.pop();
+    const parent = stack[stack.length - 1];
+    if (field) {
+      const value = field[2].trim();
+      if (!value) continue;
+      if (field[1] === 'image') {
+        const fid = value.match(/^file:(\d+)$/);
+        if (!fid) continue; // external image URL — not representable as a file field
+        parent.node.fields.push({ type: 'image', value: fid[1] });
+      } else {
+        parent.node.fields.push({ type: field[1], value });
+      }
+      continue;
+    }
+    const title = mdEscape(rest);
     if (!title) continue;
-    const indent = heading ? 0 : m[1].replace(/\t/g, '  ').length;
-    const depth = Math.min(Math.floor(indent / 2), stack.length - 1);
-    const done = !heading && /^\s*[-*+]\s+\[[xX]\]/.test(raw);
-    while (stack.length > depth + 1) stack.pop();
-    const item = { title, done, children: [] };
-    stack[stack.length - 1].children.push(item);
-    stack.push({ depth, children: item.children });
+    const node = { title, done, fields: [], children: [] };
+    parent.node.children.push(node);
+    stack.push({ depth, node });
   }
   return roots;
+}
+
+/** Render a preview of the parsed tree (nodes + fields, indented). */
+function renderPreview(roots) {
+  const tree = el('div.md-preview-tree');
+  let nodes = 0, fields = 0;
+  const render = (list, depth) => {
+    for (const it of list) {
+      nodes++;
+      tree.append(el('div.md-prev-node', { style: `--d:${depth}` },
+        el('span.md-prev-chk', null, it.done ? '☑' : '☐'),
+        el('span.md-prev-title', null, it.title || t('list.untitled')),
+      ));
+      for (const f of it.fields) {
+        fields++;
+        tree.append(el('div.md-prev-field', { style: `--d:${depth + 1}` },
+          el('span.md-prev-ico', null, FIELD_ICON[f.type] || '•'),
+          el('span.md-prev-type', null, t(FIELD_LABEL[f.type] || 'field.note')),
+          el('span.md-prev-val', { title: f.value }, f.type === 'image' ? `#${f.value}` : f.value),
+        ));
+      }
+      render(it.children, depth + 1);
+    }
+  };
+  render(roots, 0);
+  return { tree, nodes, fields };
 }
 
 async function openBoard(id) {
