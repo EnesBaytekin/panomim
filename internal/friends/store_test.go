@@ -175,3 +175,72 @@ func TestSharedBoards(t *testing.T) {
 		t.Fatalf("roles: %+v", boards[0])
 	}
 }
+
+func TestRemoveFriend(t *testing.T) {
+	s := testSetup(t)
+	alice, bob := userID(t, s, "alice"), userID(t, s, "bob")
+
+	// removing a non-friend must error
+	if err := s.RemoveFriend(alice, bob); !errors.Is(err, ErrNotFriend) {
+		t.Fatalf("expected ErrNotFriend, got %v", err)
+	}
+
+	// become friends, then remove from alice's side
+	if _, err := s.SendRequest(alice, "bob"); err != nil {
+		t.Fatal(err)
+	}
+	in, _, _ := s.ListRequests(bob)
+	if err := s.AcceptRequest(bob, in[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.areFriends(alice, bob); !ok {
+		t.Fatal("should be friends before removal")
+	}
+
+	if err := s.RemoveFriend(alice, bob); err != nil {
+		t.Fatal(err)
+	}
+	// mutual removal: both directions gone
+	if ok, _ := s.areFriends(alice, bob); ok {
+		t.Fatal("friendship should be gone")
+	}
+	if ok, _ := s.areFriends(bob, alice); ok {
+		t.Fatal("friendship should be gone (reverse)")
+	}
+	// removing again errors
+	if err := s.RemoveFriend(alice, bob); !errors.Is(err, ErrNotFriend) {
+		t.Fatalf("expected ErrNotFriend after removal, got %v", err)
+	}
+}
+
+func TestSearchUsers(t *testing.T) {
+	s := testSetup(t)
+	alice := userID(t, s, "alice")
+
+	// "a" matches carol + dave (alice excluded), sorted alphabetically
+	got, err := s.SearchUsers(alice, "a", 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Username != "carol" || got[1].Username != "dave" {
+		t.Fatalf("search 'a': %+v", got)
+	}
+
+	// case-insensitive substring
+	got, _ = s.SearchUsers(alice, "BOB", 8)
+	if len(got) != 1 || got[0].Username != "bob" {
+		t.Fatalf("search 'BOB': %+v", got)
+	}
+
+	// limit clamps to 50 and empty query returns everyone except caller
+	got, _ = s.SearchUsers(alice, "", 50)
+	if len(got) != 3 {
+		t.Fatalf("empty search should return 3 users, got %d", len(got))
+	}
+
+	// no matches
+	got, _ = s.SearchUsers(alice, "zzz", 8)
+	if len(got) != 0 {
+		t.Fatalf("no-match search: %+v", got)
+	}
+}

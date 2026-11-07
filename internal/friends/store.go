@@ -31,6 +31,11 @@ type SharedBoard struct {
 	FriendRole string `json:"friendRole"`
 }
 
+type UserHit struct {
+	UserID   int64  `json:"userId"`
+	Username string `json:"username"`
+}
+
 var (
 	ErrNotFound   = errors.New("friends: no such user")
 	ErrSelf       = errors.New("friends: cannot add yourself")
@@ -224,6 +229,45 @@ func (s *Store) SharedBoards(meID, friendID int64) ([]SharedBoard, error) {
 			return nil, err
 		}
 		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// RemoveFriend deletes the friendship between the two users (both rows).
+func (s *Store) RemoveFriend(meID, friendID int64) error {
+	res, err := s.DB.Exec(`DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`,
+		meID, friendID, friendID, meID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFriend
+	}
+	return nil
+}
+
+// SearchUsers returns users whose username contains query (case-insensitive),
+// excluding the caller — powers the add-friend autocomplete.
+func (s *Store) SearchUsers(meID int64, query string, limit int) ([]UserHit, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 8
+	}
+	rows, err := s.DB.Query(`
+		SELECT id, username FROM users
+		WHERE id != ? AND instr(lower(username), lower(?)) > 0
+		ORDER BY username COLLATE NOCASE
+		LIMIT ?`, meID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UserHit
+	for rows.Next() {
+		var u UserHit
+		if err := rows.Scan(&u.UserID, &u.Username); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
 	}
 	return out, rows.Err()
 }

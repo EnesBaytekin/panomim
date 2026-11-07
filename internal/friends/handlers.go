@@ -141,3 +141,41 @@ func (h *Handlers) SharedBoards(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, 200, boards)
 }
+
+// SearchUsers returns matching usernames for the add-friend autocomplete.
+func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFrom(r.Context())
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		httpx.JSON(w, 200, []UserHit{})
+		return
+	}
+	hits, err := h.Store.SearchUsers(u.ID, q, 8)
+	if err != nil {
+		httpx.Err(w, 500, "search failed")
+		return
+	}
+	if hits == nil {
+		hits = []UserHit{}
+	}
+	httpx.JSON(w, 200, hits)
+}
+
+// RemoveFriend removes a friend from the caller's friend list.
+func (h *Handlers) RemoveFriend(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFrom(r.Context())
+	friendID, err := strconv.ParseInt(r.PathValue("userID"), 10, 64)
+	if err != nil {
+		httpx.Err(w, 400, "invalid user id")
+		return
+	}
+	if err := h.Store.RemoveFriend(u.ID, friendID); err != nil {
+		if errors.Is(err, ErrNotFriend) {
+			httpx.Err(w, 404, "not friends")
+			return
+		}
+		httpx.Err(w, 500, "remove friend failed")
+		return
+	}
+	httpx.JSON(w, 200, map[string]bool{"ok": true})
+}

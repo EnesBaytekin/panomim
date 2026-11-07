@@ -57,6 +57,8 @@ func Router(d Deps) http.Handler {
 	authed("POST /api/friends/requests/{requestID}/accept", http.HandlerFunc(d.Friends.AcceptRequest))
 	authed("DELETE /api/friends/requests/{requestID}", http.HandlerFunc(d.Friends.DeclineRequest))
 	authed("GET /api/friends/{userID}/boards", http.HandlerFunc(d.Friends.SharedBoards))
+	authed("DELETE /api/friends/{userID}", http.HandlerFunc(d.Friends.RemoveFriend))
+	authed("GET /api/users/search", http.HandlerFunc(d.Friends.SearchUsers))
 
 	authed("GET /api/boards", http.HandlerFunc(d.Boards.List))
 	authed("POST /api/boards", http.HandlerFunc(d.Boards.Create))
