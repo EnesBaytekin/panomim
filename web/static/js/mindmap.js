@@ -9,7 +9,7 @@ import { sendSelect } from './ws.js';
 import { t } from './i18n.js';
 
 const NOTE_W = 220;          // default note width (square side)
-const MIN_W = 150, MAX_W = 420;
+const MIN_W = 150, MAX_W = 640;
 const MIN_H = 220, MAX_H = 560; // min height = square default; never below content
 
 let viewport = null;  // the clipping container (gets pointer events)
@@ -25,7 +25,6 @@ let destroyed = true;
 let edgePaths = new Map(); // edgeKey -> {g, path1, path2, grad}
 
 const NOTE_PALETTE = [35, 130, 275, 350, 15, 190]; // soft hues offered in picker
-const RESIZE_DIRS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']; // 8-way resize handles
 
 export function initMindmap(container) {
   viewport = container;
@@ -179,10 +178,8 @@ function renderNoteContent(n, node) {
   const body = noteBodyEl(node);
   if (body) n.append(body);
 
-  // resize handles (8 directions); CSS reveals them only in edit mode
-  for (const dir of RESIZE_DIRS) {
-    n.append(el('div.note-resize.rs-' + dir, { title: t('mm.resize'), dataset: { dir } }));
-  }
+  // single bottom-right resize handle; CSS reveals it only in edit mode
+  n.append(el('div.note-resize.rs-se', { title: t('mm.resize') }));
   n.append(el('div.note-link', { title: t('mm.relink') }, '⛓'));
 }
 
@@ -581,7 +578,7 @@ function onNotePointerDown(e, node, elNode) {
   const resizeHandle = e.target.closest('.note-resize');
 
   if (editMode && canEdit() && linkHandle) return startRelink(e, node);
-  if (editMode && canEdit() && resizeHandle) return startResize(e, node, elNode, resizeHandle.dataset.dir);
+  if (editMode && canEdit() && resizeHandle) return startResize(e, node, elNode);
   if (editMode && canEdit()) return startMove(e, node, elNode);
   // view mode: no repositioning; click already selects
 }
@@ -619,11 +616,11 @@ function startMove(e, node, elNode) {
   elNode.addEventListener('pointercancel', up);
 }
 
-function startResize(e, node, elNode, dir) {
+function startResize(e, node, elNode) {
   e.preventDefault();
   e.stopPropagation();
   const start = { x: e.clientX, y: e.clientY };
-  const orig = { x: node.x, y: node.y, w: node.w || NOTE_W, h: node.h || elNode.offsetHeight };
+  const orig = { w: node.w || NOTE_W, h: node.h || elNode.offsetHeight };
   // true content height, independent of the current min-height — measured once
   // so the note can be shrunk back after having been grown (the old code read
   // scrollHeight mid-drag, which made the min "sticky" at the grown size).
@@ -635,23 +632,11 @@ function startResize(e, node, elNode, dir) {
   const move = ev => {
     const dx = (ev.clientX - start.x) / zoom;
     const dy = (ev.clientY - start.y) / zoom;
-    let { x, y, w, h } = orig;
-    if (dir.includes('e')) w += dx;
-    if (dir.includes('w')) { w -= dx; x += dx; }
-    if (dir.includes('s')) h += dy;
-    if (dir.includes('n')) { h -= dy; y += dy; }
-
-    // width clamp: keep the opposite edge fixed when dragging a left handle
-    if (w < MIN_W) { if (dir.includes('w') && !dir.includes('e')) { x -= MIN_W - w; w = MIN_W; } else w = MIN_W; }
-    else if (w > MAX_W) w = MAX_W;
-
-    // height clamp: never below the true content height
-    if (h < contentH) { if (dir.includes('n') && !dir.includes('s')) { y -= contentH - h; h = contentH; } else h = contentH; }
-    else if (h > MAX_H) h = MAX_H;
-
-    node.x = Math.round(x); node.y = Math.round(y); node.w = Math.round(w); node.h = Math.round(h);
-    elNode.style.left = node.x + 'px';
-    elNode.style.top = node.y + 'px';
+    // bottom-right only: grow/shrink width and height, clamped to content.
+    const w = Math.max(MIN_W, Math.min(MAX_W, orig.w + dx));
+    const h = Math.max(contentH, Math.min(MAX_H, orig.h + dy));
+    node.w = Math.round(w);
+    node.h = Math.round(h);
     elNode.style.width = node.w + 'px';
     elNode.style.minHeight = node.h + 'px';
     noteSizes.set(node.id, { w: node.w, h: node.h });
@@ -661,7 +646,7 @@ function startResize(e, node, elNode, dir) {
     elNode.removeEventListener('pointermove', move);
     elNode.removeEventListener('pointerup', up);
     elNode.removeEventListener('pointercancel', up);
-    try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { x: node.x, y: node.y, w: node.w, h: node.h })); }
+    try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { w: node.w, h: node.h })); }
     catch (err) { toast(err.message, 'error'); }
   };
   elNode.addEventListener('pointermove', move);
@@ -842,12 +827,13 @@ async function deleteOnlyNote(node, toRoot) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-function openPop(anchor) {
+function openPop(anchor, onClose) {
   // local popover w/o ui.popover import cycle complexities
   const pop = el('div.popover.note-menu');
   const close = () => {
     pop.remove();
     document.removeEventListener('pointerdown', outside, true);
+    onClose?.();
   };
   const outside = e => { if (!pop.contains(e.target)) close(); };
   setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
@@ -903,7 +889,10 @@ function startTitleEdit(node) {
 
 function colorPicker(node, closeMenu) {
   closeMenu();
-  const { pop, close } = openPop(notesLayer.querySelector(`.note[data-id="${node.id}"] .note-tools`) || notesLayer);
+  const noteEl = notesLayer.querySelector(`.note[data-id="${node.id}"]`);
+  // On close, re-apply the note's real style so a live slider preview never sticks.
+  const resetNote = () => { if (noteEl) noteEl.setAttribute('style', noteStyle(store.nodes.get(node.id) || node)); };
+  const { pop, close } = openPop(notesLayer.querySelector(`.note[data-id="${node.id}"] .note-tools`) || notesLayer, resetNote);
   const swatches = el('div.color-swatches', null,
     [null, ...NOTE_PALETTE].map(h =>
       el('button.swatch', {
@@ -927,10 +916,12 @@ function colorPicker(node, closeMenu) {
       swatches.querySelectorAll('.swatch.active').forEach(s => s.classList.remove('active'));
       const h = Number(e.target.value);
       colorPreview.style.background = `hsl(${h} var(--note-sat) var(--note-lum))`;
+      // live-preview the dragged color straight on the note paper
+      if (noteEl) noteEl.style.setProperty('--hue', h);
     },
     onchange: async e => {
       try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { hue: Number(e.target.value) })); close(); }
-      catch (err) { toast(err.message, 'error'); }
+      catch (err) { toast(err.message, 'error'); resetNote(); }
     },
   });
   const colorPreview = el('span.hue-preview', { style: `background:hsl(${node.hue ?? 35} var(--note-sat) var(--note-lum))` });
