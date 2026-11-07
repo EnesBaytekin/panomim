@@ -806,6 +806,10 @@ a.field-chip:hover { color: var(--accent); }
 .field-image-edit { display: flex; align-items: center; gap: 8px; flex: 1; }
 .field-image-edit img { max-width: 190px; max-height: 110px; border-radius: 8px; border: 1px solid var(--line); }
 .field-link-row { display: flex; gap: 4px; flex: 1; align-items: center; }
+.field-popover { max-height: min(72vh, 480px); overflow-y: auto; }
+.field-order { display: flex; flex-direction: column; gap: 1px; flex: none; }
+.field-order .reorder { width: 16px; height: 16px; font-size: 8px; border-radius: 4px; }
+.field-order .reorder:disabled { opacity: .3; cursor: default; background: transparent; color: var(--ink-soft); }
 
 /* --- menus -------------------------------------------------------------------------------- */
 

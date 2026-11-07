@@ -135,6 +135,8 @@ const dict = {
     'field.fieldsTitle': 'Alanlar',
     'field.remove': 'Kaldır',
     'field.deleteField': 'Alanı sil',
+    'field.moveUp': 'Yukarı taşı',
+    'field.moveDown': 'Aşağı taşı',
     'field.add': '+ Ekle',
 
     // friends
@@ -334,6 +336,8 @@ const dict = {
     'field.fieldsTitle': 'Fields',
     'field.remove': 'Remove',
     'field.deleteField': 'Delete field',
+    'field.moveUp': 'Move up',
+    'field.moveDown': 'Move down',
     'field.add': '+ Add',
 
     // friends

@@ -71,8 +71,9 @@ export function openFieldEditor(nodeId, anchor) {
   const node = store.nodes.get(nodeId);
   if (!node) return;
   const { pop, close } = popover(anchor);
+  pop.classList.add('field-popover');
 
-  function rerender() {
+  function rerender(focusId) {
     const n = store.nodes.get(nodeId);
     if (!n) { close(); return; }
     clear(pop);
@@ -81,6 +82,10 @@ export function openFieldEditor(nodeId, anchor) {
       el('div.fields-list', null, n.fields.map(f => fieldRow(n, f, rerender))),
       addRow(n, rerender),
     );
+    if (focusId) {
+      const inp = pop.querySelector(`input[data-fid="${focusId}"]`);
+      if (inp) { inp.focus(); try { inp.select(); } catch { /* ignore */ } }
+    }
   }
   rerender();
   return close;
@@ -96,6 +101,18 @@ function fieldRow(node, f, rerender) {
     } catch (e) { toast(e.message, 'error'); }
   }, 600);
 
+  const idx = node.fields.findIndex(x => x.id === f.id);
+  const upBtn = el('button.icon-btn.tiny.reorder', {
+    title: t('field.moveUp'),
+    disabled: idx <= 0,
+    onclick: () => moveField(node, f, -1, rerender),
+  }, '▲');
+  const downBtn = el('button.icon-btn.tiny.reorder', {
+    title: t('field.moveDown'),
+    disabled: idx < 0 || idx >= node.fields.length - 1,
+    onclick: () => moveField(node, f, 1, rerender),
+  }, '▼');
+
   let input;
   if (f.type === 'image') {
     input = el('div.field-image-edit',
@@ -110,8 +127,10 @@ function fieldRow(node, f, rerender) {
     const type = f.type === 'datetime' ? 'datetime-local' : f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : f.type === 'link' ? 'url' : 'text';
     input = el('input.input.small', {
       type, value: f.value,
+      dataset: { fid: f.id },
       oninput: e => save(e.target.value),
       onkeydown: e => { if (e.key === 'Enter') e.target.blur(); },
+      onblur: e => save.flush(e.target.value),
       disabled: !canEdit(),
     });
     if (f.type === 'link' && f.value) {
@@ -120,12 +139,28 @@ function fieldRow(node, f, rerender) {
     }
   }
   return el('div.field-row', null,
+    canEdit() && el('span.field-order', null, upBtn, downBtn),
     el('span.field-icon', null, iconOf(f.type)),
     input,
     canEdit() && f.type !== 'image' && el('button.icon-btn.tiny', {
       title: t('field.deleteField'), onclick: async () => { if (await removeField(f)) rerender(); },
     }, '✕'),
   );
+}
+
+/** Move a field up (dir=-1) or down (dir=+1) and persist the new order. */
+async function moveField(node, f, dir, rerender) {
+  const fields = node.fields;
+  const i = fields.findIndex(x => x.id === f.id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= fields.length) return;
+  const ids = fields.map(x => x.id);
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  try {
+    const n = await api.post(`/api/nodes/${node.id}/fields/order`, { ids });
+    upsertNode(n);
+    rerender();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function removeField(f) {
@@ -167,7 +202,7 @@ function addRow(node, rerender) {
           const n = store.nodes.get(node.id);
           n.fields.push(f);
           upsertNode(n);
-          rerender();
+          rerender(f.id);
         } catch (e) { toast(e.message, 'error'); }
       },
     }, t('field.add')),
