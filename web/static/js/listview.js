@@ -16,6 +16,7 @@ export function initListView(container) {
   on('nodes', () => render());
   on('board', () => render());
   on('prefs', () => render());
+  on('selection', () => renderRemoteHints());
   render();
 }
 
@@ -43,7 +44,20 @@ function render() {
       }, el('span.plus', null, '+'), t('list.addTask')),
     );
   }
+  renderRemoteHints();
   rootEl.scrollTop = scrollTop;
+}
+
+/** Colour rows for remote users' current selections — a style-only pass, no DOM
+ *  rebuild, so collaborator cursor moves stay cheap on large boards. */
+function renderRemoteHints() {
+  if (!rootEl) return;
+  rootEl.querySelectorAll('.tree-row').forEach(r => r.style.removeProperty('--sel-color'));
+  for (const [uid, selId] of store.selections) {
+    const u = store.presence.get(uid);
+    if (!u) continue;
+    rootEl.querySelector(`.tree-row[data-id="${selId}"]`)?.style.setProperty('--sel-color', u.color);
+  }
 }
 
 function emptyState() {
@@ -66,14 +80,6 @@ function renderNode(node, depth) {
     dataset: { id: node.id, depth },
     style: `--depth:${depth}`,
   });
-
-  // remote selection hint
-  for (const [uid, selId] of store.selections) {
-    if (selId === node.id) {
-      const u = store.presence.get(uid);
-      if (u) row.style.setProperty('--sel-color', u.color);
-    }
-  }
 
   const chevron = kids.length
     ? el('button.chevron', {

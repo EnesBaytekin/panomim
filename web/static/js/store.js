@@ -14,6 +14,11 @@ export const store = {
 
 const listeners = new Map();
 
+// Cached parentId -> children index. Invalidation is cheap; building is O(N log N)
+// and only happens once per change burst, so tree walks (list view render, export,
+// subtree ops) stop rescanning + re-sorting all nodes on every level.
+let childrenIndex = null;
+
 /** on('nodes', fn) -> unsubscribe */
 export function on(event, fn) {
   if (!listeners.has(event)) listeners.set(event, new Set());
@@ -30,6 +35,7 @@ export function emit(event, payload) {
 export function setNodes(list) {
   store.nodes.clear();
   for (const n of list) store.nodes.set(n.id, n);
+  childrenIndex = null;
   emit('nodes', 'replace');
 }
 
@@ -46,6 +52,7 @@ export function upsertNode(node) {
   } else {
     store.nodes.set(node.id, { fields: [], ...node });
   }
+  childrenIndex = null;
   emit('nodes', 'update:' + node.id);
 }
 
@@ -55,16 +62,24 @@ export function removeNodes(ids) {
     store.nodes.delete(id);
     store.prefs.collapsed = store.prefs.collapsed.filter(c => !idSet.has(c));
   }
+  childrenIndex = null;
   emit('nodes', 'remove', ids);
   emit('nodes', 'replace');
 }
 
 export function nodeChildren(id) {
-  const out = [];
-  for (const n of store.nodes.values()) {
-    if (n.parentId === id || (id === null && n.parentId == null)) out.push(n);
+  if (childrenIndex == null) {
+    const idx = new Map();
+    for (const n of store.nodes.values()) {
+      const key = n.parentId == null ? null : n.parentId;
+      let arr = idx.get(key);
+      if (!arr) idx.set(key, arr = []);
+      arr.push(n);
+    }
+    for (const arr of idx.values()) arr.sort((a, b) => a.position - b.position || a.id - b.id);
+    childrenIndex = idx;
   }
-  return out.sort((a, b) => a.position - b.position || a.id - b.id);
+  return (childrenIndex.get(id) ?? []).slice();
 }
 
 export function isDescendant(maybeChild, ancestorId) {

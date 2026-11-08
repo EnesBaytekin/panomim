@@ -21,13 +21,15 @@ let notesLayer = null;
 let pan = { x: 0, y: 0 };
 let zoom = 1;
 let editMode = false;
+let lastRenderedEditMode = null; // skips a duplicate content rebuild on open/toggle
 let selectedId = null;
 let selectMode = false;      // multi-select toggle under edit mode
 const selection = new Set(); // selected note ids (multi-select)
 let anchorId = null;         // last note added to the selection (subtree button + distinct highlight)
 let areaSelectMode = false;  // rubber-band rectangle selection over the canvas
 let destroyed = true;
-let edgePaths = new Map(); // edgeKey -> {g, path1, path2, grad}
+let edgePaths = new Map();     // edgeKey -> {grad, stop1, stop2, p1, p2, parentId, childId}
+const edgesByNode = new Map(); // nodeId -> Set<edgeKey> (for cheap partial updates)
 
 const NOTE_PALETTE = [35, 130, 275, 350, 15, 190]; // soft hues offered in picker
 
@@ -56,12 +58,15 @@ export function setEditMode(v, { silent } = {}) {
   viewport?.classList.toggle('area-selecting', areaSelectMode);
   canvas?.classList.toggle('edit', editMode);
   viewport?.classList.toggle('viewing', !editMode);
-  for (const n of notesLayer?.children ?? []) {
-    n.classList.toggle('editable', editMode);
-    // rebuild content so the note tools exist ONLY in edit mode — otherwise
-    // they would be invisible yet still clickable in view mode
-    const node = store.nodes.get(Number(n.dataset.id));
-    if (node) renderNoteContent(n, node);
+  if (lastRenderedEditMode !== editMode) {
+    for (const n of notesLayer?.children ?? []) {
+      n.classList.toggle('editable', editMode);
+      // rebuild content so the note tools exist ONLY in edit mode — otherwise
+      // they would be invisible yet still clickable in view mode
+      const node = store.nodes.get(Number(n.dataset.id));
+      if (node) renderNoteContent(n, node);
+    }
+    lastRenderedEditMode = editMode;
   }
   renderEdges();
   if (!silent) emitToolbar();
@@ -121,9 +126,11 @@ function onNodesChange(ev) {
 function renderAllNotes() {
   if (destroyed || !ensureDOM()) return;
   clear(notesLayer);
+  const frag = document.createDocumentFragment();
   for (const node of store.nodes.values()) {
-    notesLayer.append(buildNote(node));
+    frag.append(buildNote(node));
   }
+  notesLayer.append(frag); // one DOM commit for the whole board
   scheduleEdges();
   renderSelections();
 }
@@ -278,26 +285,65 @@ function noteBox(node) {
 
 // --- edges -----------------------------------------------------------------
 
-function scheduleEdges() {
+function scheduleEdges(ids) {
   if (destroyed) return;
+  if (ids == null) edgesDirty = true;
+  else for (const id of ids) edgesDirtyIds.add(id);
   if (!scheduleEdges._raf) {
-    scheduleEdges._raf = requestAnimationFrame(() => { scheduleEdges._raf = 0; renderEdges(); });
+    scheduleEdges._raf = requestAnimationFrame(() => {
+      scheduleEdges._raf = 0;
+      const full = edgesDirty;
+      const partial = new Set(edgesDirtyIds);
+      edgesDirty = false;
+      edgesDirtyIds.clear();
+      renderEdges(full ? null : partial);
+    });
   }
 }
 
-function renderEdges() {
-  if (destroyed || !ensureDOM()) return;
-  // wipe & redraw (simple + fine for hundreds of notes)
-  clear(svg);
-  edgePaths.clear();
-  const defs = document.createElementNS(svgNS, 'defs');
-  svg.append(defs);
+// true → full rebuild (structure/global change); otherwise only the listed
+// nodes' attached edges are re-measured in place (drag/resize hot path).
+let edgesDirty = false;
+const edgesDirtyIds = new Set();
 
-  for (const node of store.nodes.values()) {
-    if (node.parentId == null) continue;
-    const parent = store.nodes.get(node.parentId);
-    if (!parent) continue;
-    drawEdge(parent, node, defs);
+function renderEdges(onlyIds = null) {
+  if (destroyed || !ensureDOM()) return;
+  if (onlyIds == null) {
+    // full rebuild: wipe and draw every edge (initial load / structure change)
+    clear(svg);
+    edgePaths.clear();
+    edgesByNode.clear();
+    const defs = document.createElementNS(svgNS, 'defs');
+    svg.append(defs);
+    for (const node of store.nodes.values()) {
+      if (node.parentId == null) continue;
+      const parent = store.nodes.get(node.parentId);
+      if (!parent) continue;
+      const rec = makeEdge(parent, node, defs);
+      edgePaths.set(edgeKey(parent.id, node.id), rec);
+      indexEdge(parent.id, node.id);
+    }
+    return;
+  }
+  // partial: update only edges attached to the given nodes, in place
+  const defs = svg.querySelector('defs');
+  if (!defs) return renderEdges(); // nothing drawn yet — fall back to full
+  const touched = new Set();
+  for (const id of onlyIds) {
+    const keys = edgesByNode.get(id);
+    if (keys) for (const k of keys) touched.add(k);
+  }
+  for (const key of touched) {
+    const rec = edgePaths.get(key);
+    if (!rec) continue;
+    const parent = store.nodes.get(rec.parentId);
+    const child = store.nodes.get(rec.childId);
+    if (!parent || !child || child.parentId !== parent.id) {
+      // edge no longer valid (deleted or reparented) — drop it
+      removeEdge(key, rec, defs);
+      continue;
+    }
+    updateEdge(rec, parent, child);
   }
 }
 
@@ -308,7 +354,28 @@ function hueColor(hue, l, s) {
   return `hsl(${hue} ${s}% ${l}%)`;
 }
 
-function drawEdge(parent, child, defs) {
+function edgeKey(pid, cid) { return `${pid}-${cid}`; }
+
+function indexEdge(pid, cid) {
+  const key = edgeKey(pid, cid);
+  for (const id of [pid, cid]) {
+    let s = edgesByNode.get(id);
+    if (!s) edgesByNode.set(id, s = new Set());
+    s.add(key);
+  }
+}
+
+function removeEdge(key, rec, defs) {
+  rec.p1.remove(); rec.p2.remove(); rec.grad.remove();
+  edgePaths.delete(key);
+  edgesByNode.get(rec.parentId)?.delete(key);
+  edgesByNode.get(rec.childId)?.delete(key);
+  if (defs && !defs.children.length) defs.remove();
+}
+
+/** Path/geometry for an edge — computed on demand so partial updates re-read
+ *  the live positions without touching the DOM. */
+function edgeGeometry(parent, child) {
   const a = noteBox(parent), b = noteBox(child);
   const dx = b.cx - a.cx, dy = b.cy - a.cy;
   const dist = Math.hypot(dx, dy) || 1;
@@ -325,34 +392,54 @@ function drawEdge(parent, child, defs) {
   const r1x = (q1x + q2x) / 2, r1y = (q1y + q2y) / 2;
   const sx = (r0x + r1x) / 2, sy = (r0y + r1y) / 2;
 
-  const pCol = hueColor(parent.hue, parent.hue == null ? 62 : 58, 42);
-  const cCol = hueColor(child.hue, child.hue == null ? 52 : 48, 52);
+  return {
+    d1: `M ${a.cx} ${a.cy} C ${q0x} ${q0y} ${r0x} ${r0y} ${sx} ${sy}`,
+    d2: `M ${sx} ${sy} C ${r1x} ${r1y} ${q2x} ${q2y} ${b.cx} ${b.cy}`,
+    x1: a.cx, y1: a.cy, x2: b.cx, y2: b.cy,
+    pCol: hueColor(parent.hue, parent.hue == null ? 62 : 58, 42),
+    cCol: hueColor(child.hue, child.hue == null ? 52 : 48, 52),
+  };
+}
 
-  const gradId = `g-${parent.id}-${child.id}`;
+function makeEdge(parent, child, defs) {
+  const g = edgeGeometry(parent, child);
   const grad = document.createElementNS(svgNS, 'linearGradient');
-  grad.setAttribute('id', gradId);
+  grad.setAttribute('id', `g-${parent.id}-${child.id}`);
   grad.setAttribute('gradientUnits', 'userSpaceOnUse');
-  grad.setAttribute('x1', a.cx); grad.setAttribute('y1', a.cy);
-  grad.setAttribute('x2', b.cx); grad.setAttribute('y2', b.cy);
-  grad.innerHTML = `<stop offset="0" stop-color="${pCol}"/><stop offset="1" stop-color="${cCol}"/>`;
+  grad.setAttribute('x1', g.x1); grad.setAttribute('y1', g.y1);
+  grad.setAttribute('x2', g.x2); grad.setAttribute('y2', g.y2);
+  const stop1 = document.createElementNS(svgNS, 'stop');
+  stop1.setAttribute('offset', '0'); stop1.setAttribute('stop-color', g.pCol);
+  const stop2 = document.createElementNS(svgNS, 'stop');
+  stop2.setAttribute('offset', '1'); stop2.setAttribute('stop-color', g.cCol);
+  grad.append(stop1, stop2);
   defs.append(grad);
 
-  const mk = (d, w, stroke, opacity) => {
-    const p = document.createElementNS(svgNS, 'path');
-    p.setAttribute('d', d);
-    p.setAttribute('fill', 'none');
-    p.setAttribute('stroke', stroke);
-    p.setAttribute('stroke-width', w);
-    p.setAttribute('stroke-linecap', 'round');
-    p.setAttribute('opacity', opacity);
-    return p;
-  };
-  const d1 = `M ${a.cx} ${a.cy} C ${q0x} ${q0y} ${r0x} ${r0y} ${sx} ${sy}`;
-  const d2 = `M ${sx} ${sy} C ${r1x} ${r1y} ${q2x} ${q2y} ${b.cx} ${b.cy}`;
-  const p1 = mk(d1, 2, `url(#${gradId})`, 0.55);
-  const p2 = mk(d2, 4.5, `url(#${gradId})`, 0.85);
+  const p1 = mkPath(g.d1, 2, `url(#g-${parent.id}-${child.id})`, 0.55);
+  const p2 = mkPath(g.d2, 4.5, `url(#g-${parent.id}-${child.id})`, 0.85);
   svg.append(p1, p2);
-  edgePaths.set(`${parent.id}-${child.id}`, { p1, p2 });
+  return { grad, stop1, stop2, p1, p2, parentId: parent.id, childId: child.id };
+}
+
+function mkPath(d, w, stroke, opacity) {
+  const p = document.createElementNS(svgNS, 'path');
+  p.setAttribute('d', d);
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', stroke);
+  p.setAttribute('stroke-width', w);
+  p.setAttribute('stroke-linecap', 'round');
+  p.setAttribute('opacity', opacity);
+  return p;
+}
+
+function updateEdge(rec, parent, child) {
+  const g = edgeGeometry(parent, child);
+  rec.grad.setAttribute('x1', g.x1); rec.grad.setAttribute('y1', g.y1);
+  rec.grad.setAttribute('x2', g.x2); rec.grad.setAttribute('y2', g.y2);
+  rec.stop1.setAttribute('stop-color', g.pCol);
+  rec.stop2.setAttribute('stop-color', g.cCol);
+  rec.p1.setAttribute('d', g.d1);
+  rec.p2.setAttribute('d', g.d2);
 }
 
 // --- pan & zoom -------------------------------------------------------------
@@ -580,7 +667,7 @@ function startSelectGesture(e, node, elNode) {
       n.x = o.x + dx; n.y = o.y + dy;
       if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
     }
-    scheduleEdges();
+    scheduleEdges(groupIds);
   };
   const up = () => {
     elNode.removeEventListener('pointermove', move);
@@ -633,7 +720,7 @@ function startMove(e, node, elNode) {
       n.x = o.x + dx; n.y = o.y + dy;
       if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
     }
-    scheduleEdges();
+    scheduleEdges(groupIds);
   };
   const up = async () => {
     els.forEach(({ el }) => el?.classList.remove('dragging'));
@@ -682,7 +769,7 @@ function startResize(e, node, elNode) {
     elNode.style.width = node.w + 'px';
     elNode.style.minHeight = node.h + 'px';
     noteSizes.set(node.id, { w: node.w, h: node.h });
-    scheduleEdges();
+    scheduleEdges([node.id]);
   };
   const up = async () => {
     elNode.removeEventListener('pointermove', move);
@@ -1071,10 +1158,9 @@ async function bulkDelete() {
 
 function renderSelections() {
   syncAnchor();
-  notesLayer?.querySelectorAll('.note').forEach(n => {
-    n.classList.remove('remote-selected', 'selected', 'anchor');
-    n.querySelector('.remote-tag')?.remove();
-  });
+  notesLayer?.querySelectorAll('.note').forEach(n => n.classList.remove('remote-selected', 'selected', 'anchor'));
+  // one batched sweep instead of a descendant query per note
+  notesLayer?.querySelectorAll('.remote-tag').forEach(tag => tag.remove());
   for (const id of selection) {
     notesLayer?.querySelector(`.note[data-id="${id}"]`)?.classList.add('selected');
   }

@@ -1289,8 +1289,9 @@ function wireStore() {
   on('presence', renderPresence);
   on('board', () => { renderBoardHeader(); renderPresence(); });
   on('history', refreshUndoUI);
-  // keep remote selection hints in list view too: listview re-renders on 'selection'
-  on('selection', () => emit('nodes', 'replace'));
+  // Remote selection hints are handled per-view (mindmap renderSelections,
+  // listview renderRemoteHints) — a full 'nodes replace' here used to rebuild
+  // the whole board on every collaborator cursor move.
   // friends panel "open this board" navigation (avoids a circular app.js import)
   on('open-board', id => openBoard(id));
   // friend requests/friends changed → refresh the sidebar badge

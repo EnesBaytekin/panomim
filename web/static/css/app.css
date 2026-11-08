@@ -1295,6 +1295,9 @@ a.field-chip:hover { color: var(--accent); }
   width: 0;
   height: 0;
   transform-origin: 0 0;
+  /* pan/zoom moves only this layer; without it the browser re-rasterizes the
+     whole board (box-shadows, gradients, tilted notes) on every frame */
+  will-change: transform;
 }
 .mm-edges {
   position: absolute;
