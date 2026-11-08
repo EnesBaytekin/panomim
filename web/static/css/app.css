@@ -451,8 +451,11 @@ select.input { cursor: pointer; }
 }
 .avatar-modal .profile-name { font-size: 18px; }
 .avatar-modal .modal-actions { width: 100%; justify-content: center; }
-.presence-user { display: flex; align-items: center; gap: 8px; }
-.presence-user .avatar { width: 24px; height: 24px; font-size: 10px; }
+.presence-user { display: flex; align-items: center; gap: 10px; line-height: 1.2; }
+.presence-user .avatar { width: 26px; height: 26px; font-size: 11px; flex: none; }
+.presence-user .profile-id { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.presence-user .profile-name { font-weight: 700; font-size: 13px; }
+.presence-user .profile-sub { font-size: 11px; color: var(--ink-soft); }
 
 /* --- content head ------------------------------------------------------------------ */
 
@@ -574,7 +577,7 @@ select.input { cursor: pointer; }
 
 .tree-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 5px;
   padding: 4px 10px 4px 6px;
   border-radius: 9px;
@@ -586,6 +589,8 @@ select.input { cursor: pointer; }
   background: var(--active-soft);
   box-shadow: inset 0 0 0 1.5px var(--sel-color, var(--accent));
 }
+/* keep the checkbox / chevron / grip lined up with the first title line */
+.tree-row .check, .tree-row .chevron { margin-top: 1px; }
 
 .chevron {
   flex: none;
@@ -629,20 +634,26 @@ select.input { cursor: pointer; }
   color: var(--ink-soft);
 }
 
-.tree-title {
-  flex: 0 1 auto;
+.tree-body {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 2px 4px;
+  display: flex;
+  flex-direction: column;
+}
+.tree-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  padding: 1px 4px;
   border-radius: 6px;
   cursor: default;
 }
 .tree-title:hover { background: var(--hover); }
 .dim { color: var(--ink-soft); }
 
-.tree-chips { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+/* fields / note / image / date / time / link all live below the title on a second line */
+.tree-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 1px 4px 3px; min-width: 0; }
+.tree-fields:empty { display: none; }
 .row-actions {
   margin-left: auto;
   display: flex;
@@ -650,6 +661,7 @@ select.input { cursor: pointer; }
   opacity: 0;
   transition: opacity .13s;
   flex: none;
+  align-self: flex-start;
 }
 .tree-row:hover .row-actions,
 .tree-row:focus-within .row-actions { opacity: 1; }
@@ -659,7 +671,8 @@ select.input { cursor: pointer; }
 .drag-grip {
   flex: none;
   width: 15px;
-  align-self: stretch;
+  align-self: flex-start;
+  margin-top: 3px;
   display: inline-grid;
   place-items: center;
   color: var(--ink-soft);
@@ -908,6 +921,36 @@ a.field-chip:hover { color: var(--accent); }
 .md-text[readonly] { color: var(--ink-soft); }
 .md-readonly-note { font-size: 12px; color: var(--ink-soft); margin-bottom: 8px; }
 .md-file { align-self: flex-start; }
+
+/* import: format toggle + parent picker + custom pattern grid */
+.import-settings { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.import-formats { display: flex; gap: 6px; }
+.import-formats .btn { flex: none; }
+.import-parent { width: 100%; }
+.import-advanced {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line-strong);
+}
+.import-advanced summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.import-advanced summary:hover { color: var(--accent); }
+.import-advanced-body { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.pattern-grid {
+  display: grid;
+  grid-template-columns: 96px 1fr 1fr;
+  gap: 6px;
+  align-items: center;
+}
+.pattern-grid .pat-label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.pattern-grid .pat-head { font-size: 11px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+.pattern-grid .input.small { width: 100%; min-width: 0; }
 .md-prev-head { display: flex; gap: 6px; align-items: baseline; font-size: 13px; font-weight: 700; color: var(--ink); }
 .md-count { font-size: 12px; font-weight: 400; color: var(--ink-soft); }
 .md-preview {
@@ -1132,8 +1175,10 @@ a.field-chip:hover { color: var(--accent); }
   position: absolute;
   min-width: 88px; /* floor well below the JS resize floor so short/narrow notes fit */
   max-width: 640px;
-  min-height: 220px; /* square default; grows with content */
+  min-height: 48px; /* short strip by default; grows with content */
   padding-bottom: 6px;
+  display: flex;
+  flex-direction: column;
   border-radius: 3px 14px 5px 14px;
   transform: rotate(var(--tilt, 0deg)); /* doodle corkboard tilt */
   transition: box-shadow .15s, transform .18s ease;
@@ -1178,6 +1223,13 @@ a.field-chip:hover { color: var(--accent); }
   border-color: rgba(90, 65, 25, 0.10);
 }
 .note.remote-selected { box-shadow: 0 0 0 2.5px var(--remote-color, var(--accent)), var(--shadow-note); }
+/* multi-select: strong double ring so a selected note is unmistakable */
+.note.selected {
+  box-shadow: 0 0 0 3px var(--accent), 0 0 0 7px color-mix(in srgb, var(--accent) 22%, transparent), var(--shadow-note);
+  z-index: 5;
+}
+/* in selection mode, notes are click targets — show a pointer cursor */
+.mindmap-view.selecting .note.editable { cursor: pointer; }
 /* done: net biçimde "yapıldı" — soluk + doygunluğu düşük kağıt, üstü çizili başlık, köşede damga */
 .note.done .note-title { text-decoration: line-through; opacity: .55; }
 .note.done { filter: saturate(.3) contrast(.92); opacity: .75; }
@@ -1211,6 +1263,10 @@ a.field-chip:hover { color: var(--accent); }
   gap: 6px;
   padding: 8px 10px 2px 10px;
 }
+/* a title-only note (no fields) collapses to a short strip with the title centered */
+.note.title-only { justify-content: center; }
+.note.title-only .note-head { padding-top: 4px; padding-bottom: 4px; }
+.note.title-only .note-title { align-self: center; }
 .note-check {
   flex: none;
   width: 19px;
@@ -1306,7 +1362,7 @@ a.field-chip:hover { color: var(--accent); }
   box-shadow: none;
 }
 
-/* one field per row: [drag grip][content] */
+/* one field per row: [content] */
 .field-item {
   display: flex;
   align-items: flex-start;
@@ -1322,20 +1378,6 @@ a.field-chip:hover { color: var(--accent); }
   white-space: pre-wrap;
 }
 .field-item > .field-img { flex: 0 1 auto; max-width: 100%; }
-.field-grip {
-  display: none;
-  flex: none;
-  cursor: grab;
-  color: var(--note-line);
-  font-size: 12px;
-  letter-spacing: -2px;
-  padding: 2px 1px 0 0;
-  line-height: 1.4;
-  user-select: none;
-}
-.note.editable .field-grip { display: inline-block; }
-.field-item.dragging { opacity: .4; }
-.field-item.drag-over { box-shadow: 0 -2px 0 0 var(--accent); }
 
 .note-resize {
   display: none;
@@ -1452,6 +1494,15 @@ a.field-chip:hover { color: var(--accent); }
   font-variant-numeric: tabular-nums;
 }
 .zoom-label:hover { color: var(--ink); }
+
+.select-count {
+  flex: none;
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
 
 /* --- color picker -------------------------------------------------------------------------------------- */
 

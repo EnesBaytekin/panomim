@@ -2,15 +2,16 @@
 // Notes hang on a large pannable/zoomable canvas; edges are gradient cubic
 // beziers that thicken & warm from parent (thin) to child (thick).
 import { api } from './api.js';
-import { el, toast, colorForUser, debounce } from './ui.js';
+import { el, toast, colorForUser, debounce, confirmDialog } from './ui.js';
 import { store, on, nodeChildren, canEdit, isDescendant, setCollapsed, upsertNode, removeNodes } from './store.js';
 import { fieldElement, openFieldEditor, pickAndUpload } from './fields.js';
 import { sendSelect } from './ws.js';
+import { pushAction, patchAction, deleteAction, createTitleAction, markCreated, consumeCreate, groupAction } from './undo.js';
 import { t } from './i18n.js';
 
 const NOTE_W = 220;          // default note width (square side)
 const MIN_W = 100, MAX_W = 640;
-const MIN_H = 56, MAX_H = 560;  // narrow/short notes allowed; never below content
+const MIN_H = 40, MAX_H = 560;  // short single-line notes allowed; never below content
 
 let viewport = null;  // the clipping container (gets pointer events)
 let canvas = null;    // transformed world (notes + svg)
@@ -21,6 +22,8 @@ let pan = { x: 0, y: 0 };
 let zoom = 1;
 let editMode = false;
 let selectedId = null;
+let selectMode = false;      // multi-select toggle under edit mode
+const selection = new Set(); // selected note ids (multi-select)
 let destroyed = true;
 let edgePaths = new Map(); // edgeKey -> {g, path1, path2, grad}
 
@@ -46,6 +49,8 @@ export function destroyMindmap() {
 export function setEditMode(v, { silent } = {}) {
   editMode = v && canEdit();
   store.editMode = editMode;
+  if (!editMode) { selectMode = false; clearSelection(); }
+  viewport?.classList.toggle('selecting', selectMode);
   canvas?.classList.toggle('edit', editMode);
   viewport?.classList.toggle('viewing', !editMode);
   for (const n of notesLayer?.children ?? []) {
@@ -60,6 +65,7 @@ export function setEditMode(v, { silent } = {}) {
 }
 
 export function isEditMode() { return editMode; }
+export function isSelectMode() { return selectMode; }
 export function setSelection(id) { selectedId = id; renderSelections(); }
 
 // --- DOM skeleton ---------------------------------------------------------
@@ -124,7 +130,11 @@ function buildNote(node) {
     style: noteStyle(node),
   });
   n.addEventListener('pointerdown', e => onNotePointerDown(e, node, n));
-  n.addEventListener('click', () => {
+  n.addEventListener('click', e => {
+    if (selectMode && canEdit()) {
+      toggleSelect(node, e.shiftKey);
+      return;
+    }
     if (selectedId !== node.id) {
       selectedId = node.id;
       renderSelections();
@@ -152,9 +162,10 @@ function renderNoteContent(n, node) {
       onclick: async e => {
         e.stopPropagation();
         const cur = store.nodes.get(node.id) || node; // never trust a stale copy
+        const next = !cur.done;
         try {
-          const updated = await api.patch(`/api/nodes/${node.id}/done`, { done: !cur.done });
-          mergeNode(updated);
+          if (canEdit()) pushAction(patchAction(node.id, { done: cur.done }, { done: next }));
+          mergeNode(await api.patch(`/api/nodes/${node.id}/done`, { done: next }));
         } catch (err) { toast(err.message, 'error'); }
       },
     }, '✓'),
@@ -176,6 +187,7 @@ function renderNoteContent(n, node) {
   n.append(head);
 
   const body = noteBodyEl(node);
+  n.classList.toggle('title-only', !body);
   if (body) n.append(body);
 
   // single bottom-right resize handle; CSS reveals it only in edit mode
@@ -202,69 +214,14 @@ function noteBodyFields(node) {
   );
 }
 
-/** Render the note's fields as one ordered list (text / image / chip mixed),
- *  with drag-to-reorder in edit mode. */
+/** Render the note's fields as one ordered list (text / image / chip mixed).
+ *  Order is changed via the field editor's up/down arrows — no in-note grip. */
 function noteBodyEl(node) {
   const fields = noteBodyFields(node);
   if (!fields.length) return null;
   const list = el('div.note-fields');
-  const draggable = editMode && canEdit();
-  const items = fields.map(f => {
-    const grip = draggable
-      ? el('span.field-grip', { draggable: 'true', title: t('mm.reorder') }, '⠿')
-      : null;
-    return el('div.field-item', { dataset: { fieldId: f.id } }, grip, fieldElement(f));
-  });
-  list.append(...items);
-
-  if (draggable) {
-    let dragId = null;
-    for (const item of items) {
-      const grip = item.querySelector('.field-grip');
-      grip.addEventListener('dragstart', e => {
-        dragId = Number(item.dataset.fieldId);
-        item.classList.add('dragging');
-        try { e.dataTransfer.setData('text/plain', String(dragId)); } catch { /* Safari */ }
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      grip.addEventListener('dragend', () => {
-        item.classList.remove('dragging');
-        list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
-        dragId = null;
-      });
-      item.addEventListener('dragover', e => {
-        if (dragId == null) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
-        item.classList.add('drag-over');
-      });
-      item.addEventListener('drop', async e => {
-        e.preventDefault();
-        const targetId = Number(item.dataset.fieldId);
-        list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
-        if (dragId == null || targetId === dragId) return;
-        await reorderFields(node, dragId, targetId);
-      });
-    }
-  }
+  list.append(...fields.map(f => el('div.field-item', { dataset: { fieldId: f.id } }, fieldElement(f))));
   return list;
-}
-
-/** Move field `dragId` to just before `targetId` and persist the new order. */
-async function reorderFields(node, dragId, targetId) {
-  const cur = store.nodes.get(node.id) || node;
-  const ids = cur.fields.map(f => f.id);
-  const from = ids.indexOf(dragId);
-  if (from < 0) return;
-  const moved = ids.splice(from, 1)[0];
-  const to = ids.indexOf(targetId);
-  if (to < 0) return;
-  ids.splice(to, 0, moved);
-  try {
-    const updated = await api.post(`/api/nodes/${node.id}/fields/order`, { ids });
-    upsertNode(updated);
-  } catch (e) { toast(e.message, 'error'); }
 }
 
 function noteStyle(node) {
@@ -279,9 +236,9 @@ function noteStyle(node) {
   ].filter(Boolean).join(';');
 }
 
-/** Deterministic playful tilt per note (doodle corkboard feel). */
+/** Deterministic playful tilt per note (doodle corkboard feel) — wider swing. */
 function tiltOf(id) {
-  return (((id * 47) % 9) - 4) * 0.4;
+  return (((id * 47) % 17) - 8) * 0.5;
 }
 
 function updateNoteEl(elNode, node) {
@@ -572,6 +529,11 @@ function onDblClick(e) {
 function onNotePointerDown(e, node, elNode) {
   // checkbox & buttons handle themselves
   if (e.target.closest('.note-check, .note-btn')) return;
+
+  // in select mode, clicking toggles selection (handled by the click handler);
+  // nothing drags or relinks here
+  if (selectMode && canEdit()) return;
+
   select(node.id);
 
   const linkHandle = e.target.closest('.note-link');
@@ -586,29 +548,42 @@ function onNotePointerDown(e, node, elNode) {
 function startMove(e, node, elNode) {
   e.preventDefault();
   const start = screenToWorld(e.clientX, e.clientY);
-  const orig = { x: node.x, y: node.y };
-  elNode.classList.add('dragging');
+  // if this note is part of a multi-selection, drag the whole selection together
+  const groupIds = (selection.size > 1 && selection.has(node.id)) ? [...selection] : [node.id];
+  const group = groupIds.map(id => store.nodes.get(id)).filter(Boolean);
+  const origs = new Map(group.map(n => [n.id, { x: n.x, y: n.y }]));
+  const els = group.map(n => ({ n, el: notesLayer.querySelector(`.note[data-id="${n.id}"]`) }));
+  els.forEach(({ el }) => el?.classList.add('dragging'));
   try { elNode.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
   let moved = false;
   const move = ev => {
     const cur = screenToWorld(ev.clientX, ev.clientY);
-    const nx = orig.x + (cur.x - start.x);
-    const ny = orig.y + (cur.y - start.y);
-    if (!moved && Math.hypot(cur.x - start.x, cur.y - start.y) * zoom < 3) return;
+    const dx = cur.x - start.x, dy = cur.y - start.y;
+    if (!moved && Math.hypot(dx, dy) * zoom < 3) return;
     moved = true;
-    node.x = nx; node.y = ny;
-    elNode.style.left = nx + 'px';
-    elNode.style.top = ny + 'px';
+    for (const { n, el } of els) {
+      const o = origs.get(n.id);
+      n.x = o.x + dx; n.y = o.y + dy;
+      if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+    }
     scheduleEdges();
   };
   const up = async () => {
-    elNode.classList.remove('dragging');
+    els.forEach(({ el }) => el?.classList.remove('dragging'));
     elNode.removeEventListener('pointermove', move);
     elNode.removeEventListener('pointerup', up);
     elNode.removeEventListener('pointercancel', up);
     if (moved) {
-      try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { x: node.x, y: node.y })); }
-      catch (err) { toast(err.message, 'error'); }
+      const steps = [];
+      for (const { n } of els) {
+        const o = origs.get(n.id);
+        if (n.x === o.x && n.y === o.y) continue;
+        steps.push(patchAction(n.id, { x: o.x, y: o.y }, { x: n.x, y: n.y }));
+      }
+      if (steps.length) pushAction(steps.length === 1 ? steps[0] : groupAction(steps));
+      try {
+        for (const { n } of els) mergeNode(await api.patch(`/api/nodes/${n.id}`, { x: n.x, y: n.y }));
+      } catch (err) { toast(err.message, 'error'); }
     }
   };
   elNode.addEventListener('pointermove', move);
@@ -646,6 +621,9 @@ function startResize(e, node, elNode) {
     elNode.removeEventListener('pointermove', move);
     elNode.removeEventListener('pointerup', up);
     elNode.removeEventListener('pointercancel', up);
+    const before = { w: orig.w, h: orig.h };
+    const after = { w: node.w, h: node.h };
+    if (before.w !== after.w || before.h !== after.h) pushAction(patchAction(node.id, before, after));
     try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { w: node.w, h: node.h })); }
     catch (err) { toast(err.message, 'error'); }
   };
@@ -691,14 +669,19 @@ function startRelink(e, node) {
   };
   const onUp = async () => {
     cleanup();
+    const before = { parentId: node.parentId ?? 0 };
     if (target == null) {
       // dropped on empty board → make root
-      try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 })); }
-      catch (err) { toast(err.message, 'error'); }
+      try {
+        pushAction(patchAction(node.id, before, { parentId: 0 }));
+        mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 }));
+      } catch (err) { toast(err.message, 'error'); }
       return;
     }
-    try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: target })); }
-    catch (err) { toast(err.message, 'error'); }
+    try {
+      pushAction(patchAction(node.id, before, { parentId: target }));
+      mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: target }));
+    } catch (err) { toast(err.message, 'error'); }
   };
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
@@ -712,13 +695,183 @@ function select(id) {
   }
 }
 
+// --- multi-select mode ----------------------------------------------------------
+
+export function toggleSelectMode() {
+  selectMode = !selectMode;
+  if (!selectMode) clearSelection();
+  viewport?.classList.toggle('selecting', selectMode);
+  emitToolbar();
+  renderSelections();
+}
+
+function clearSelection() {
+  selection.clear();
+  selectedId = null;
+  renderSelectionBar();
+  renderSelections();
+}
+
+/** Toggle one note (or its whole subtree with Shift) in/out of the selection. */
+function toggleSelect(node, subtree) {
+  const ids = subtree ? [node.id, ...descendantIds(node.id)] : [node.id];
+  const allSelected = ids.every(id => selection.has(id));
+  for (const id of ids) allSelected ? selection.delete(id) : selection.add(id);
+  selectedId = selection.size === 1 ? [...selection][0] : null;
+  renderSelectionBar();
+  renderSelections();
+}
+
+function descendantIds(id) {
+  const out = [];
+  const walk = pid => { for (const c of nodeChildren(pid)) { out.push(c.id); walk(c.id); } };
+  walk(id);
+  return out;
+}
+
+/** Floating toolbar shown while notes are selected: count + bulk actions. */
+function renderSelectionBar() {
+  const toolbar = viewport?.querySelector('.mm-toolbar');
+  let bar = toolbar?.querySelector('#mm-sel-panel');
+  if (selection.size === 0) { bar?.remove(); return; }
+  if (!toolbar) return;
+  if (!bar) {
+    bar = el('div.tb-panel', { id: 'mm-sel-panel' });
+    toolbar.append(bar);
+  }
+  clear(bar);
+  bar.append(
+    el('span.select-count', null, t('app.selectedCount', { n: selection.size })),
+    el('button.btn.small', { onclick: e => bulkColor(e.currentTarget) }, t('app.bulkColor')),
+    el('button.btn.small', { onclick: e => bulkResize(e.currentTarget) }, t('app.bulkResize')),
+    el('button.btn.small.ghost', { onclick: () => clearSelection() }, t('app.clearSelection')),
+    el('button.btn.small.danger', { onclick: () => bulkDelete() }, t('app.bulkDelete')),
+  );
+}
+
+function bulkColor(anchor) {
+  const nodes = [...selection].map(id => store.nodes.get(id)).filter(Boolean);
+  if (!nodes.length) return;
+  const { pop, close } = openPop(anchor);
+  pop.append(
+    el('div.pop-title', null, t('app.bulkColor')),
+    el('div.color-swatches', null,
+      [null, ...NOTE_PALETTE].map(h =>
+        el('button.swatch', {
+          style: h == null ? 'background:var(--note-default)' : `background:hsl(${h} var(--note-sat) var(--note-lum))`,
+          title: h == null ? t('mm.defaultColor') : t('mm.hue', { h }),
+          onclick: async () => {
+            pushAction(groupAction(nodes.map(n => colorAction(n.id, n.hue ?? null, h))));
+            try {
+              const patch = h == null ? { clearHue: true } : { hue: h };
+              for (const n of nodes) mergeNode(await api.patch(`/api/nodes/${n.id}`, patch));
+              close();
+            } catch (e) { toast(e.message, 'error'); }
+          },
+        }),
+      ),
+    ),
+  );
+}
+
+function bulkResize(anchor) {
+  const nodes = [...selection].map(id => store.nodes.get(id)).filter(Boolean);
+  if (!nodes.length) return;
+  const first = nodes[0];
+  const { pop, close } = openPop(anchor);
+  const wInput = el('input.input.small', { type: 'number', min: MIN_W, max: MAX_W, value: first.w || NOTE_W, title: t('app.resizeWidth') });
+  const hInput = el('input.input.small', { type: 'number', min: MIN_H, max: MAX_H, value: first.h || '', placeholder: t('app.resizeAuto'), title: t('app.resizeHeight') });
+  const num = s => { const v = parseInt(s, 10); return Number.isFinite(v) ? v : null; };
+  const apply = async () => {
+    const wRaw = num(wInput.value);
+    const hRaw = num(hInput.value);
+    if (wRaw == null && hRaw == null) return;
+    const w = wRaw == null ? null : Math.max(MIN_W, Math.min(MAX_W, wRaw));
+    const h = hRaw == null ? null : Math.max(MIN_H, Math.min(MAX_H, hRaw));
+    const steps = [];
+    for (const n of nodes) {
+      const before = { w: n.w || NOTE_W, h: n.h || 0 };
+      const after = { w: w ?? (n.w || NOTE_W), h: h ?? (n.h || 0) };
+      if (before.w === after.w && before.h === after.h) continue;
+      steps.push(patchAction(n.id, before, after));
+    }
+    if (steps.length) pushAction(groupAction(steps));
+    try {
+      for (const n of nodes) {
+        const body = {};
+        if (w != null) body.w = w;
+        if (h != null) body.h = h;
+        mergeNode(await api.patch(`/api/nodes/${n.id}`, body));
+      }
+      close();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  wInput.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+  hInput.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+  pop.append(
+    el('div.pop-title', null, t('app.bulkResize')),
+    el('div.field-row', null,
+      el('span.field-icon', null, '↔'),
+      el('span.pat-label', null, t('app.resizeWidth')), wInput,
+      el('span.pat-label', null, t('app.resizeHeight')), hInput,
+    ),
+    el('div.field-add', null,
+      el('button.btn.small.primary', { onclick: apply }, t('app.resizeApply')),
+    ),
+  );
+}
+
+async function bulkDelete() {
+  const nodes = [...selection].map(id => store.nodes.get(id)).filter(Boolean);
+  if (!nodes.length) return;
+  // only top-level selected nodes are deleted (descendants go with their parent)
+  const topIds = nodes
+    .filter(n => {
+      let cur = n;
+      while (cur && cur.parentId != null) {
+        if (selection.has(cur.parentId)) return false;
+        cur = store.nodes.get(cur.parentId);
+      }
+      return true;
+    })
+    .map(n => n.id);
+  let childrenCount = 0;
+  const walk = pid => { for (const c of nodeChildren(pid)) { childrenCount++; walk(c.id); } };
+  for (const id of topIds) walk(id);
+  const ok = await confirmDialog({
+    title: t('app.bulkDeleteTitle'),
+    body: t('app.bulkDeleteBody', { n: topIds.length + childrenCount }),
+    confirmText: t('app.bulkDeleteConfirm'),
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    for (const id of topIds) {
+      const kids = nodeChildren(id);
+      await api.del(`/api/nodes/${id}${kids.length ? '?withChildren=1' : ''}`);
+    }
+    const doomed = new Set();
+    for (const id of topIds) {
+      doomed.add(id);
+      const walk2 = pid => { for (const c of nodeChildren(pid)) { doomed.add(c.id); walk2(c.id); } };
+      walk2(id);
+    }
+    removeNodes([...doomed]);
+    clearSelection();
+    toast(t('app.bulkDeleteDone', { n: doomed.size }), 'ok');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // --- selection & presence visuals ----------------------------------------------
 
 function renderSelections() {
   notesLayer?.querySelectorAll('.note').forEach(n => {
-    n.classList.remove('remote-selected');
+    n.classList.remove('remote-selected', 'selected');
     n.querySelector('.remote-tag')?.remove();
   });
+  for (const id of selection) {
+    notesLayer?.querySelector(`.note[data-id="${id}"]`)?.classList.add('selected');
+  }
   for (const [uid, nodeId] of store.selections) {
     const u = store.presence.get(uid);
     if (!u) continue;
@@ -747,6 +900,7 @@ export async function createNote({ x, y, parentId } = {}) {
       title: '', x: Math.round(x ?? 0), y: Math.round(y ?? 0), parentId,
     });
     mergeNode(node);
+    markCreated(node); // first title commit folds "create" + "title" into one undo
     if (parentId != null) {
       // ensure parent is expanded
       setCollapsed(parentId, false);
@@ -777,7 +931,10 @@ function noteMenu(node, anchor) {
     menuItem(t('mm.color'), () => colorPicker(node, close)),
     node.parentId != null && menuItem(t('mm.makeRoot'), async () => {
       close();
-      try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 })); }
+      try {
+        pushAction(patchAction(node.id, { parentId: node.parentId }, { parentId: 0 }));
+        mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 }));
+      }
       catch (e) { toast(e.message, 'error'); }
     }),
     menuItem(t('mm.delete'), () => { close(); deleteNoteDialog(node); }, 'danger'),
@@ -801,6 +958,7 @@ function deleteNoteDialog(node) {
     close();
     try {
       if (mode === 'subtree') {
+        if (!kids.length) pushAction(deleteAction(node)); // leaf delete is reversible
         await api.del(`/api/nodes/${node.id}${kids.length ? '?withChildren=1' : ''}`);
         const doomed = [node.id];
         const walk = pid => { for (const c of nodeChildren(pid)) { doomed.push(c.id); walk(c.id); } };
@@ -886,8 +1044,13 @@ function startTitleEdit(node) {
   const commit = async () => {
     const val = input.value.trim();
     if (val && val !== node.title) {
-      try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { title: val })); return; }
-      catch (e) { toast(e.message, 'error'); }
+      try {
+        const meta = consumeCreate(node.id);
+        if (meta) pushAction(createTitleAction(node.id, meta, val));
+        else pushAction(patchAction(node.id, { title: node.title ?? '' }, { title: val }));
+        mergeNode(await api.patch(`/api/nodes/${node.id}`, { title: val }));
+        return;
+      } catch (e) { toast(e.message, 'error'); }
     }
     renderAllNotes();
   };
@@ -897,6 +1060,15 @@ function startTitleEdit(node) {
   });
   input.addEventListener('blur', commit, { once: true });
   input.addEventListener('pointerdown', e => e.stopPropagation());
+}
+
+/** Reversible single-note color change (hue set or cleared). */
+function colorAction(id, beforeHue, afterHue) {
+  const p = h => (h == null ? { clearHue: true } : { hue: h });
+  return {
+    undo: async () => { await api.patch(`/api/nodes/${id}`, p(beforeHue)); },
+    redo: async () => { await api.patch(`/api/nodes/${id}`, p(afterHue)); },
+  };
 }
 
 function colorPicker(node, closeMenu) {
@@ -914,6 +1086,7 @@ function colorPicker(node, closeMenu) {
         title: h == null ? t('mm.defaultColor') : t('mm.hue', { h }),
         onclick: async () => {
           try {
+            pushAction(colorAction(node.id, node.hue ?? null, h));
             const patch = h == null ? { clearHue: true } : { hue: h };
             mergeNode(await api.patch(`/api/nodes/${node.id}`, patch));
             close();
@@ -932,7 +1105,12 @@ function colorPicker(node, closeMenu) {
       if (noteEl) noteEl.style.setProperty('--hue', h);
     },
     onchange: async e => {
-      try { mergeNode(await api.patch(`/api/nodes/${node.id}`, { hue: Number(e.target.value) })); close(); }
+      const h = Number(e.target.value);
+      try {
+        pushAction(colorAction(node.id, node.hue ?? null, h));
+        mergeNode(await api.patch(`/api/nodes/${node.id}`, { hue: h }));
+        close();
+      }
       catch (err) { toast(err.message, 'error'); resetNote(); }
     },
   });
@@ -952,7 +1130,10 @@ function currentBoardId() { return store.board?.board?.id; }
 
 let toolbarApi = null;
 export function bindToolbar(apiObj) { toolbarApi = apiObj; }
-function emitToolbar() { toolbarApi?.onModeChange?.(editMode); }
+function emitToolbar() {
+  toolbarApi?.onModeChange?.(editMode);
+  toolbarApi?.onSelectModeChange?.(selectMode);
+}
 
 export function zoomBy(factor) {
   const vp = viewport.getBoundingClientRect();

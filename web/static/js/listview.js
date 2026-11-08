@@ -1,8 +1,9 @@
 // List view — a cozy VSCode-style tree of todos.
 import { api } from './api.js';
-import { el, toast, confirmDialog } from './ui.js';
+import { el, toast, confirmDialog, popover } from './ui.js';
 import { store, on, nodeChildren, isCollapsed, setCollapsed, canEdit, upsertNode, removeNodes, isDescendant } from './store.js';
 import { fieldChips, openFieldEditor } from './fields.js';
+import { pushAction, patchAction, deleteAction, createTitleAction, markCreated, consumeCreate } from './undo.js';
 import { t } from './i18n.js';
 
 let rootEl = null;
@@ -88,24 +89,23 @@ function renderNode(node, depth) {
     ? el('span.drag-grip', { title: t('list.dragToMove'), dataset: { grip: '1' } }, '⠿')
     : null;
 
-  row.append(...[grip, chevron, checkToggle(node), title].filter(Boolean));
+  // title + fields (note/image/date/time/link) live in one vertical body:
+  // long titles wrap instead of ellipsizing, fields sit on a second line.
+  const body = el('span.tree-body', null,
+    title,
+    el('span.tree-fields', null, fieldChips(node)),
+  );
+
+  row.append(...[grip, chevron, checkToggle(node), body].filter(Boolean));
   if (canEdit()) wireDrag(row, node);
 
-  const chips = el('span.tree-chips', null, fieldChips(node));
-  row.append(chips);
-
-  if (canEdit()) {
-    row.append(el('span.row-actions', null,
-      el('button.icon-btn', { title: t('list.addChild'), onclick: e => { e.stopPropagation(); addChild(node); } }, '+'),
-      editingId === node.id ? null : el('button.icon-btn', { title: t('list.rename'), onclick: e => { e.stopPropagation(); startEdit(node.id); } }, '✎'),
-      el('button.icon-btn', { title: t('list.fields'), onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); } }, '◫'),
-      el('button.icon-btn', { title: t('list.delete'), onclick: e => { e.stopPropagation(); deleteNode(node); } }, '🗑'),
-    ));
-  } else {
-    row.append(el('span.row-actions', null,
-      el('button.icon-btn', { title: t('list.fields'), onclick: e => { e.stopPropagation(); openFieldEditor(node.id, e.currentTarget); } }, '◫'),
-    ));
-  }
+  // one ⋯ menu replaces the row of side icons (add field, rename, add child, …)
+  row.append(el('span.row-actions', null,
+    el('button.icon-btn', {
+      title: t('list.menu'),
+      onclick: e => { e.stopPropagation(); rowMenu(node, e.currentTarget); },
+    }, '⋯'),
+  ));
 
   const frag = document.createDocumentFragment();
   frag.append(row);
@@ -123,12 +123,37 @@ function checkToggle(node) {
     title: node.done ? t('list.markUndone') : t('list.markDone'),
     onclick: async e => {
       e.stopPropagation();
+      const next = !node.done;
       try {
-        const updated = await api.patch(`/api/nodes/${node.id}/done`, { done: !node.done });
-        mergeNode(updated);
+        if (canEdit()) pushAction(patchAction(node.id, { done: node.done }, { done: next }));
+        mergeNode(await api.patch(`/api/nodes/${node.id}/done`, { done: next }));
       } catch (err) { toast(err.message, 'error'); }
     },
   }, '✓');
+}
+
+/** The single "⋯" row menu — mirrors the mindmap note menu (add field, rename,
+ *  add child, make root, delete) so the icons and options match. */
+function rowMenu(node, anchor) {
+  const { pop, close } = popover(anchor, { placement: 'bottom-end' });
+  const items = canEdit() ? [
+    el('button.menu-item', { onclick: () => { close(); openFieldEditor(node.id, anchor); } }, t('mm.fields')),
+    el('button.menu-item', { onclick: () => { close(); startEdit(node.id); } }, t('mm.rename')),
+    el('button.menu-item', { onclick: () => { close(); addChild(node); } }, t('mm.addChild')),
+    node.parentId != null && el('button.menu-item', {
+      onclick: async () => {
+        close();
+        try {
+          pushAction(patchAction(node.id, { parentId: node.parentId }, { parentId: 0 }));
+          upsertNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 }));
+        } catch (e) { toast(e.message, 'error'); }
+      },
+    }, t('mm.makeRoot')),
+    el('button.menu-item.danger', { onclick: () => { close(); deleteNode(node); } }, t('mm.delete')),
+  ] : [
+    el('button.menu-item', { onclick: () => { close(); openFieldEditor(node.id, anchor); } }, t('list.viewFields')),
+  ];
+  pop.append(...items.filter(Boolean));
 }
 
 function titleEditor(node) {
@@ -147,14 +172,17 @@ function titleEditor(node) {
     editingId = null; editingIsNew = false;
     if (!val) {
       if (isNew) {
+        consumeCreate(id); // discard the create marker
         try { await api.del(`/api/nodes/${id}`); removeLocal(id); } catch {}
       }
       render();
       return;
     }
     try {
-      const updated = await api.patch(`/api/nodes/${id}`, { title: val });
-      mergeNode(updated);
+      const meta = consumeCreate(id);
+      if (meta) pushAction(createTitleAction(id, meta, val));
+      else pushAction(patchAction(id, { title: node.title ?? '' }, { title: val }));
+      mergeNode(await api.patch(`/api/nodes/${id}`, { title: val }));
     } catch (e) {
       toast(e.message, 'error');
       render();
@@ -198,6 +226,7 @@ async function createRoot() {
       title: '', x: roots * 36, y: roots * 36,
     });
     mergeNode(node);
+    markCreated(node); // first title commit folds "create" + "title" into one undo
     editingId = node.id;
     editingIsNew = true;
     render();
@@ -215,6 +244,7 @@ async function addChild(parent) {
       y: Math.round(parent.y + (parent.h || 130) + 30),
     });
     mergeNode(node);
+    markCreated(node); // first title commit folds "create" + "title" into one undo
     editingId = node.id;
     editingIsNew = true;
     setCollapsed(parent.id, false);
@@ -245,6 +275,7 @@ async function deleteNode(node) {
       danger: true,
     });
     if (!ok) return;
+    pushAction(deleteAction(node)); // leaf delete is reversible
     await api.del(`/api/nodes/${node.id}`);
   }
   removeLocal(node.id);
@@ -390,6 +421,7 @@ async function finishDrag(ev, d) {
     if (drop.mode === 'inside') {
       if (node.parentId === target.id) return; // already a direct child
       setCollapsed(target.id, false); // show the new child right away
+      pushAction(patchAction(d.id, { parentId: node.parentId ?? 0 }, { parentId: target.id }));
       const updated = await api.patch(`/api/nodes/${d.id}`, { parentId: target.id });
       upsertNode(updated);
     } else {

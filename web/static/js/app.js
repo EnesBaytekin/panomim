@@ -6,6 +6,7 @@ import { initListView } from './listview.js';
 import * as mm from './mindmap.js';
 import { connectBoard, disconnect, resync } from './ws.js';
 import { openFriends } from './friends.js';
+import { undo, redo, canUndo, canRedo, resetUndo } from './undo.js';
 import { t, toggleTheme, toggleLang, currentTheme, getLang } from './i18n.js';
 
 let root = null;
@@ -89,6 +90,9 @@ function buildShell() {
         el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, t('app.editMode')),
       ),
       el('span.tb-group', { dataset: { group: 'actions' } },
+        el('button.btn.small', { id: 'mm-select-toggle', title: t('app.selectSubtreeHint'), onclick: () => mm.toggleSelectMode() }, t('app.selectMode')),
+        el('button.btn.small', { id: 'mm-undo', title: t('app.undo'), onclick: doUndo }, '↶'),
+        el('button.btn.small', { id: 'mm-redo', title: t('app.redo'), onclick: doRedo }, '↷'),
         el('button.btn.small.primary', { id: 'mm-add', title: t('app.newNote'), onclick: () => mm.addNoteCentered() }, t('app.addNote')),
       ),
     ),
@@ -103,7 +107,9 @@ function buildShell() {
   );
   mm.bindToolbar({
     onModeChange: updateEditModeUI,
+    onSelectModeChange: updateSelectModeUI,
   });
+  wireKeys();
 
   contentEl = el('main.content',
     el('header.content-head',
@@ -448,14 +454,204 @@ function downloadMarkdown(md, name) {
   a.remove();
 }
 
+// --- custom (own-pattern) import ------------------------------------------------
+
+const CUSTOM_DEFAULTS = {
+  notePrefix: '- ',
+  donePrefix: '+ ',
+  indent: '    ',
+  fields: {
+    text: { prefix: '* ', suffix: '' },
+    date: { prefix: '', suffix: '' },
+    time: { prefix: '[', suffix: ']' },
+    datetime: { prefix: '', suffix: '' },
+    link: { prefix: '-- ', suffix: '' },
+  },
+};
+
+function customFieldInputs() {
+  const inp = (v, ph) => el('input.input.small', { value: v, placeholder: ph ?? '' });
+  const cfg = {
+    notePrefix: inp(CUSTOM_DEFAULTS.notePrefix),
+    donePrefix: inp(CUSTOM_DEFAULTS.donePrefix),
+    indent: inp(CUSTOM_DEFAULTS.indent),
+    fields: {
+      text: { prefix: inp(CUSTOM_DEFAULTS.fields.text.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.text.suffix) },
+      date: { prefix: inp(CUSTOM_DEFAULTS.fields.date.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.date.suffix) },
+      time: { prefix: inp(CUSTOM_DEFAULTS.fields.time.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.time.suffix) },
+      datetime: { prefix: inp(CUSTOM_DEFAULTS.fields.datetime.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.datetime.suffix) },
+      link: { prefix: inp(CUSTOM_DEFAULTS.fields.link.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.link.suffix) },
+    },
+  };
+  const row = (label, pfx, sfx) => [el('span.pat-label', null, label), pfx, sfx ?? el('span')];
+  const grid = el('div.pattern-grid', null,
+    el('span'), el('span.pat-head', null, t('md.prefix')), el('span.pat-head', null, t('md.suffix')),
+    ...row(t('md.customNotePrefix'), cfg.notePrefix),
+    ...row(t('md.customDonePrefix'), cfg.donePrefix),
+    ...row(t('md.customIndent'), cfg.indent),
+    ...row(t('md.fieldNote'), cfg.fields.text.prefix, cfg.fields.text.suffix),
+    ...row(t('md.fieldDate'), cfg.fields.date.prefix, cfg.fields.date.suffix),
+    ...row(t('md.fieldTime'), cfg.fields.time.prefix, cfg.fields.time.suffix),
+    ...row(t('md.fieldDatetime'), cfg.fields.datetime.prefix, cfg.fields.datetime.suffix),
+    ...row(t('md.fieldLink'), cfg.fields.link.prefix, cfg.fields.link.suffix),
+  );
+  return { grid, cfg };
+}
+
+function customConfig(cfg) {
+  const read = p => ({ prefix: p.prefix.value, suffix: p.suffix.value });
+  return {
+    notePrefix: cfg.notePrefix.value,
+    donePrefix: cfg.donePrefix.value,
+    indent: cfg.indent.value,
+    fields: {
+      text: read(cfg.fields.text), date: read(cfg.fields.date), time: read(cfg.fields.time),
+      datetime: read(cfg.fields.datetime), link: read(cfg.fields.link),
+    },
+  };
+}
+
+/** Parse "own pattern" text into the same tree shape parseMarkdown returns.
+ *  A line starting with the note/checked prefix is a note; an indented line that
+ *  matches a field pattern attaches to the note one level above it. */
+function parseCustom(text, cfg) {
+  const roots = [];
+  const stack = [{ depth: -1, node: { fields: [], children: roots } }];
+  const noteP = cfg.notePrefix || '';
+  const doneP = cfg.donePrefix || '';
+  const indent = cfg.indent ?? '    ';
+  const matchers = [
+    ['text', cfg.fields.text], ['date', cfg.fields.date], ['time', cfg.fields.time],
+    ['datetime', cfg.fields.datetime], ['link', cfg.fields.link],
+  ].filter(([, f]) => f && (f.prefix || '').length > 0)
+    .map(([type, f]) => ({ type, prefix: f.prefix, suffix: f.suffix || '' }));
+
+  const depthOf = line => {
+    if (!indent) return 0;
+    let d = 0;
+    while (line.startsWith(indent)) { line = line.slice(indent.length); d++; }
+    return d;
+  };
+  const strip = line => {
+    if (!indent) return line;
+    while (line.startsWith(indent)) line = line.slice(indent.length);
+    return line;
+  };
+  const fieldFor = rest => {
+    for (const m of matchers) {
+      if (!rest.startsWith(m.prefix)) continue;
+      let v = rest.slice(m.prefix.length);
+      if (m.suffix) { const i = v.indexOf(m.suffix); if (i >= 0) v = v.slice(0, i); }
+      v = v.trim();
+      if (v) return { type: m.type, value: v };
+    }
+    return null;
+  };
+
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    const depth = depthOf(raw);
+    const rest = strip(raw);
+    let title = null, done = false;
+    if (noteP && rest.startsWith(noteP)) { title = rest.slice(noteP.length); done = false; }
+    else if (doneP && rest.startsWith(doneP)) { title = rest.slice(doneP.length); done = true; }
+    if (title != null) {
+      title = mdEscape(title);
+      if (!title) continue;
+      while (stack.length > 1 && stack[stack.length - 1].depth >= depth) stack.pop();
+      const node = { title, done, fields: [], children: [] };
+      stack[stack.length - 1].node.children.push(node);
+      stack.push({ depth, node });
+      continue;
+    }
+    const field = fieldFor(rest);
+    if (field) {
+      while (stack.length > 1 && stack[stack.length - 1].depth >= depth) stack.pop();
+      const owner = stack[stack.length - 1];
+      if (owner.depth >= 0) owner.node.fields.push(field);
+    }
+  }
+  return roots;
+}
+
+/** Existing board nodes as an indented <select> option list (root first). */
+function parentOptions() {
+  const opts = [el('option', { value: '' }, t('md.parentRoot'))];
+  const walk = (list, depth) => {
+    for (const n of list) {
+      opts.push(el('option', { value: n.id }, '· '.repeat(depth) + (noteMainText(n) || t('list.untitled'))));
+      walk(nodeChildren(n.id), depth + 1);
+    }
+  };
+  walk(nodeChildren(null), 0);
+  return opts;
+}
+
+/** A free area to the right of the existing content — imports land there. */
+function freeOrigin() {
+  if (!store.nodes.size) return { x: 200, y: 200 };
+  let maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of store.nodes.values()) {
+    maxX = Math.max(maxX, n.x + (n.w || 220));
+    minY = Math.min(minY, n.y);
+    maxY = Math.max(maxY, n.y + (n.h || 220));
+  }
+  return { x: maxX + 260, y: (minY + maxY) / 2 - 120 };
+}
+
+/** Lay a tree out radially (spiral-like): roots around a ring, children fan out
+ *  inside their parent's angular wedge, one ring per depth. Preserves the tree
+ *  and keeps notes from piling in one straight line. Returns [{node,parent,x,y}]. */
+function radialLayout(roots, cx, cy) {
+  const out = [];
+  const leafCount = n => n.children.length ? n.children.reduce((s, c) => s + leafCount(c), 0) : 1;
+  const R0 = 150, RSTEP = 170;
+  const place = (nodes, a0, wedge, depth, parent) => {
+    const totalLeaves = nodes.reduce((s, n) => s + leafCount(n), 0) || 1;
+    let a = a0;
+    for (const n of nodes) {
+      const w = (leafCount(n) / totalLeaves) * wedge;
+      const mid = a + w / 2;
+      const r = R0 + depth * RSTEP;
+      out.push({ node: n, parent, x: Math.round(cx + r * Math.cos(mid)), y: Math.round(cy + r * Math.sin(mid)) });
+      place(n.children, a, w, depth + 1, n);
+      a += w;
+    }
+  };
+  place(roots, 0, Math.PI * 2, 0, null);
+  return out;
+}
+
 function importMarkdown() {
   const b = store.board?.board;
   if (!b) return;
   if (!canEdit()) { toast(t('app.noEditPerm'), 'error'); return; }
 
+  const formatMd = el('button.btn.small', { onclick: () => setFormat('md') }, t('md.formatMarkdown'));
+  const formatCustom = el('button.btn.small', { onclick: () => setFormat('custom') }, t('md.formatCustom'));
+  const parentSel = el('select.input.import-parent', null, parentOptions());
+  const pat = customFieldInputs();
+  const advanced = el('details.import-advanced', null,
+    el('summary', null, t('md.advanced')),
+    el('div.import-advanced-body', null,
+      el('div.dim', null, t('md.customHint')),
+      pat.grid,
+    ),
+  );
+
   const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } },
     el('div.modal.md-modal',
       el('h3.modal-title', null, t('md.importTitle')),
+      el('div.import-settings',
+        el('div.import-formats', null,
+          el('span.modal-label', null, t('md.formatLabel')),
+          formatMd,
+          formatCustom,
+        ),
+        el('label.modal-label', null, t('md.parentLabel')),
+        parentSel,
+        advanced,
+      ),
       el('div.md-body',
         el('div.md-col',
           el('label.modal-label', null, t('md.pasteLabel')),
@@ -479,12 +675,21 @@ function importMarkdown() {
   const preview = overlay.querySelector('.md-preview');
   const countEl = overlay.querySelector('.md-count');
   const importBtn = overlay.querySelector('.btn.primary');
+  let format = 'md';
   let current = [];
+
+  function setFormat(f) {
+    format = f;
+    formatMd.classList.toggle('active', f === 'md');
+    formatCustom.classList.toggle('active', f === 'custom');
+    advanced.open = f === 'custom';
+    update();
+  }
 
   function setText(text) { ta.value = text; update(); }
 
   function update() {
-    current = parseMarkdown(ta.value);
+    current = format === 'custom' ? parseCustom(ta.value, customConfig(pat.cfg)) : parseMarkdown(ta.value);
     clear(preview);
     if (!current.length) {
       preview.append(el('div.dim', null, ta.value.trim() ? t('md.nothing') : t('md.previewHint')));
@@ -499,31 +704,31 @@ function importMarkdown() {
   }
 
   ta.addEventListener('input', update);
-  update();
+  setFormat('md');
 
   async function doImport() {
     if (!current.length) return;
     importBtn.disabled = true;
+    const parentId = parentSel.value === '' ? null : Number(parentSel.value);
+    const origin = freeOrigin();
+    const laid = radialLayout(current, origin.x, origin.y);
+    const idByNode = new Map();
     let created = 0, failed = 0;
-    const walk = async (list, parentId, x, y) => {
-      let i = 0;
-      for (const it of list) {
-        try {
-          const node = await api.post(`/api/boards/${b.id}/nodes`, {
-            parentId, title: (it.title || '').slice(0, 500), x: x + (parentId ? 250 : 0), y: y + i * 46,
-          });
-          created++;
-          if (it.done) { try { await api.patch(`/api/nodes/${node.id}/done`, { done: true }); } catch {} }
-          for (const f of it.fields) {
-            try { await api.post(`/api/nodes/${node.id}/fields`, { type: f.type, value: f.value }); } catch {}
-          }
-          if (it.children.length) await walk(it.children, node.id, node.x, node.y);
-        } catch { failed++; }
-        i++;
-      }
-    };
     toast(t('app.importing', { n: current.length }));
-    await walk(current, null, 60, 60);
+    for (const { node, parent, x, y } of laid) {
+      try {
+        const p = parent ? idByNode.get(parent) : parentId;
+        const n = await api.post(`/api/boards/${b.id}/nodes`, {
+          parentId: p, title: (node.title || '').slice(0, 500), x, y,
+        });
+        idByNode.set(node, n.id);
+        created++;
+        if (node.done) { try { await api.patch(`/api/nodes/${n.id}/done`, { done: true }); } catch {} }
+        for (const f of node.fields) {
+          try { await api.post(`/api/nodes/${n.id}/fields`, { type: f.type, value: f.value }); } catch {}
+        }
+      } catch { failed++; }
+    }
     await resync();
     overlay.remove();
     toast(failed ? t('app.importResultFail', { ok: created, fail: failed }) : t('app.importResult', { n: created }), failed ? 'error' : 'ok');
@@ -637,6 +842,7 @@ async function openBoard(id) {
   store.nodes.clear();
   store.selections.clear();
   store.editMode = false;
+  resetUndo();
   try {
     const nodes = await api.get(`/api/boards/${id}/nodes`);
     store.nodes.clear();
@@ -644,7 +850,16 @@ async function openBoard(id) {
   } catch (e) { toast(e.message, 'error'); }
   try {
     store.prefs = { tab: 'list', panX: null, panY: null, zoom: 1, collapsed: [], ...(await api.get(`/api/boards/${id}/prefs`)) };
-  } catch {}
+  } catch { store.prefs = { tab: 'list', panX: null, panY: null, zoom: 1, collapsed: [] }; }
+  // First open: collapse every parent so the tree starts tidy (per-user).
+  // Once flagged, the user's own expand/collapse state is respected thereafter.
+  if (!store.prefs.collapsedInit) {
+    store.prefs.collapsed = [...store.nodes.values()]
+      .filter(n => nodeChildren(n.id).length)
+      .map(n => n.id);
+    store.prefs.collapsedInit = true;
+    savePrefsDebounced();
+  }
   emit('nodes', 'replace');
   emit('board');
   emit('prefs');
@@ -727,6 +942,43 @@ function updateEditModeUI(on_ = store.editMode) {
   }
   addBtn?.closest('.tb-group')?.classList.toggle('hidden', !editing);
   mainPanel?.classList.toggle('hidden', !canEdit());
+  updateSelectModeUI();
+  refreshUndoUI();
+}
+
+function updateSelectModeUI(on_ = mm.isSelectMode()) {
+  const btn = document.getElementById('mm-select-toggle');
+  btn?.classList.toggle('active', on_);
+}
+
+async function doUndo() {
+  try { await undo(); } catch (e) { toast(e.message, 'error'); }
+}
+
+async function doRedo() {
+  try { await redo(); } catch (e) { toast(e.message, 'error'); }
+}
+
+function refreshUndoUI() {
+  const u = document.getElementById('mm-undo');
+  const r = document.getElementById('mm-redo');
+  if (u) u.disabled = !canUndo();
+  if (r) r.disabled = !canRedo();
+}
+
+let keysWired = false;
+function wireKeys() {
+  if (keysWired) return;
+  keysWired = true;
+  document.addEventListener('keydown', e => {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && e.shiftKey) { e.preventDefault(); doRedo(); }
+    else if (k === 'z') { e.preventDefault(); doUndo(); }
+    else if (k === 'y') { e.preventDefault(); doRedo(); }
+  });
 }
 
 // --- presence -------------------------------------------------------------------
@@ -764,7 +1016,12 @@ function presenceDropdown() {
     ...users.map(u =>
       el('button.menu-item.presence-user', {
         onclick: () => { close(); showAvatarLarge(u, { editable: false }); },
-      }, avatar({ userId: u.userId, username: u.username }, 'md'), el('span', null, u.username)),
+      }, avatar({ userId: u.userId, username: u.username }, 'md'),
+        el('span.profile-id', null,
+          el('span.profile-name', null, u.username),
+          el('span.profile-sub', null, u.online ? t('app.online') : ''),
+        ),
+      ),
     ),
   );
 }
@@ -886,6 +1143,7 @@ function closeDrawer() {
 function wireStore() {
   on('presence', renderPresence);
   on('board', () => { renderBoardHeader(); renderPresence(); });
+  on('history', refreshUndoUI);
   // keep remote selection hints in list view too: listview re-renders on 'selection'
   on('selection', () => emit('nodes', 'replace'));
   // friends panel "open this board" navigation (avoids a circular app.js import)
