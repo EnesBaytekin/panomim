@@ -21,6 +21,7 @@
   --accent-ink: #ffffff;
   --accent-soft: #f5ddcc;
   --amber: #e8b04b;
+  --select-anchor: #3b82c4;   /* distinct ring for the last-added note in a selection */
 
   --ok: #6a9c78;
   --danger: #c0564a;
@@ -63,6 +64,7 @@
   --accent-ink: #2b1c10;
   --accent-soft: #46312a;
   --amber: #e8b04b;
+  --select-anchor: #6fa8e8;
 
   --ok: #7fae8b;
   --danger: #d97566;
@@ -1369,6 +1371,20 @@ a.field-chip:hover { color: var(--accent); }
   box-shadow: 0 0 0 3px var(--accent), 0 0 0 7px color-mix(in srgb, var(--accent) 22%, transparent), var(--shadow-note);
   z-index: 5;
 }
+/* the last-added note in a selection: a different color so it stands out */
+.note.anchor {
+  box-shadow: 0 0 0 3px var(--select-anchor), 0 0 0 7px color-mix(in srgb, var(--select-anchor) 22%, transparent), var(--shadow-note);
+  z-index: 6;
+}
+/* rubber-band box selection */
+.mm-marquee {
+  position: absolute;
+  border: 1.5px dashed var(--select-anchor);
+  background: color-mix(in srgb, var(--select-anchor) 14%, transparent);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 50;
+}
 /* in selection mode, notes are click targets — show a pointer cursor */
 .mindmap-view.selecting .note.editable { cursor: pointer; }
 /* in selection mode a note is a pure selection target: its inner controls
@@ -1376,7 +1392,8 @@ a.field-chip:hover { color: var(--accent); }
 .mindmap-view.selecting .note .note-check,
 .mindmap-view.selecting .note .note-btn,
 .mindmap-view.selecting .note .note-resize,
-.mindmap-view.selecting .note .note-link { pointer-events: none; }
+.mindmap-view.selecting .note .note-link,
+.mindmap-view.selecting .note a.field-chip { pointer-events: none; }
 /* done: net biçimde "yapıldı" — soluk + doygunluğu düşük kağıt, üstü çizili başlık, köşede damga */
 .note.done .note-title { text-decoration: line-through; opacity: .55; }
 .note.done { filter: saturate(.3) contrast(.92); opacity: .75; }

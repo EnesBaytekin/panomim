@@ -90,7 +90,8 @@ function buildShell() {
         el('button.btn.small', { id: 'mm-edit-toggle', onclick: toggleEditMode }, t('app.editMode')),
       ),
       el('span.tb-group', { dataset: { group: 'actions' } },
-        el('button.btn.small', { id: 'mm-select-toggle', title: t('app.selectSubtreeHint'), onclick: () => mm.toggleSelectMode() }, t('app.selectMode')),
+        el('button.btn.small', { id: 'mm-select-toggle', title: t('app.selectModeOn'), onclick: () => mm.toggleSelectMode() }, t('app.selectMode')),
+        el('button.btn.small', { id: 'mm-area-toggle', title: t('app.areaSelectHint'), onclick: () => mm.toggleAreaSelect() }, t('app.areaSelect')),
         el('button.btn.small', { id: 'mm-undo', title: t('app.undo'), onclick: doUndo }, '↶'),
         el('button.btn.small', { id: 'mm-redo', title: t('app.redo'), onclick: doRedo }, '↷'),
         el('button.btn.small.primary', { id: 'mm-add', title: t('app.newNote'), onclick: () => mm.addNoteCentered() }, t('app.addNote')),
@@ -108,6 +109,7 @@ function buildShell() {
   mm.bindToolbar({
     onModeChange: updateEditModeUI,
     onSelectModeChange: updateSelectModeUI,
+    onAreaSelectChange: updateAreaSelectUI,
   });
   wireKeys();
 
@@ -388,6 +390,7 @@ function noteBodyFields(node) {
 
 function fieldLine(f) {
   if (f.type === 'image') return `[image] file:${f.value}`;
+  if (f.type === 'link') return `[${f.value}](${f.value})`;
   return `[${f.type}] ${mdEscape(f.value)}`;
 }
 
@@ -531,9 +534,9 @@ const CUSTOM_DEFAULTS = {
   indent: '    ',
   fields: {
     text: { prefix: '* ', suffix: '' },
-    date: { prefix: '📅 ', suffix: '' },
+    date: { prefix: '[', suffix: ']' },
     time: { prefix: '[', suffix: ']' },
-    datetime: { prefix: '📆 ', suffix: '' },
+    datetime: { prefix: '[', suffix: ']' },
     link: { prefix: '-- ', suffix: '' },
   },
 };
@@ -925,6 +928,13 @@ function parseMarkdown(text) {
       }
       continue;
     }
+    // standard markdown link `[text](url)` → a link field
+    const link = rest.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link) {
+      const url = link[2].trim();
+      if (url) parent.node.fields.push({ type: 'link', value: url });
+      continue;
+    }
     const title = mdEscape(rest);
     if (!title) continue;
     const node = { title, done, fields: [], children: [] };
@@ -1079,6 +1089,14 @@ function updateEditModeUI(on_ = store.editMode) {
 function updateSelectModeUI(on_ = mm.isSelectMode()) {
   const btn = document.getElementById('mm-select-toggle');
   btn?.classList.toggle('active', on_);
+  updateAreaSelectUI();
+}
+
+function updateAreaSelectUI(on_ = mm.isAreaSelectMode()) {
+  const btn = document.getElementById('mm-area-toggle');
+  if (!btn) return;
+  btn.classList.toggle('active', on_);
+  btn.hidden = !mm.isSelectMode();
 }
 
 async function doUndo() {

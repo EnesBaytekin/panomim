@@ -24,7 +24,8 @@ let editMode = false;
 let selectedId = null;
 let selectMode = false;      // multi-select toggle under edit mode
 const selection = new Set(); // selected note ids (multi-select)
-let selectSubtreeMode = false; // when on, tapping a note selects its whole subtree (mobile shift+click substitute)
+let anchorId = null;         // last note added to the selection (subtree button + distinct highlight)
+let areaSelectMode = false;  // rubber-band rectangle selection over the canvas
 let destroyed = true;
 let edgePaths = new Map(); // edgeKey -> {g, path1, path2, grad}
 
@@ -50,8 +51,9 @@ export function destroyMindmap() {
 export function setEditMode(v, { silent } = {}) {
   editMode = v && canEdit();
   store.editMode = editMode;
-  if (!editMode) { selectMode = false; clearSelection(); }
+  if (!editMode) { selectMode = false; areaSelectMode = false; clearSelection(); }
   viewport?.classList.toggle('selecting', selectMode);
+  viewport?.classList.toggle('area-selecting', areaSelectMode);
   canvas?.classList.toggle('edit', editMode);
   viewport?.classList.toggle('viewing', !editMode);
   for (const n of notesLayer?.children ?? []) {
@@ -67,6 +69,7 @@ export function setEditMode(v, { silent } = {}) {
 
 export function isEditMode() { return editMode; }
 export function isSelectMode() { return selectMode; }
+export function isAreaSelectMode() { return areaSelectMode; }
 export function setSelection(id) { selectedId = id; renderSelections(); }
 
 // --- DOM skeleton ---------------------------------------------------------
@@ -462,6 +465,7 @@ function onPanStart(e) {
   if (e.button !== 0 && e.pointerType === 'mouse') return;
   if (e.target.closest('.note')) return; // notes handle their own drags
   if (e.target.closest('.mm-toolbar')) return; // toolbar buttons need their clicks
+  if (areaSelectMode && canEdit()) return startMarquee(e);
   try { viewport.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   const move = ev => {
@@ -549,7 +553,7 @@ function onNotePointerDown(e, node, elNode) {
  *  and lets the subtree button + shift-tap apply reliably. */
 function startSelectGesture(e, node, elNode) {
   e.preventDefault();
-  const subtree = e.shiftKey || selectSubtreeMode;
+  const subtree = e.shiftKey;
   const startScreen = { x: e.clientX, y: e.clientY };
   const start = screenToWorld(e.clientX, e.clientY);
   // drag the whole selection when the grabbed note is already selected, else
@@ -566,6 +570,7 @@ function startSelectGesture(e, node, elNode) {
       if (Math.hypot(ev.clientX - startScreen.x, ev.clientY - startScreen.y) < 4) return;
       dragging = true;
       for (const id of groupIds) selection.add(id);
+      anchorId = node.id;
       els.forEach(({ el }) => el?.classList.add('dragging'));
     }
     const cur = screenToWorld(ev.clientX, ev.clientY);
@@ -761,15 +766,74 @@ function select(id) {
 
 export function toggleSelectMode() {
   selectMode = !selectMode;
-  if (!selectMode) { selectSubtreeMode = false; clearSelection(); }
+  if (!selectMode) { areaSelectMode = false; clearSelection(); }
   viewport?.classList.toggle('selecting', selectMode);
+  viewport?.classList.toggle('area-selecting', areaSelectMode);
   emitToolbar();
   renderSelections();
+}
+
+/** Toggle rubber-band box selection. Only meaningful while select mode is on. */
+export function toggleAreaSelect() {
+  if (!selectMode) return;
+  areaSelectMode = !areaSelectMode;
+  viewport?.classList.toggle('area-selecting', areaSelectMode);
+  emitToolbar();
+}
+
+/** Draw a rubber-band rectangle; on release, union-add every note whose center
+ *  falls inside. Repeatable — each box adds to the current selection. */
+function startMarquee(e) {
+  e.preventDefault();
+  const vp = viewport.getBoundingClientRect();
+  const x0 = e.clientX - vp.left, y0 = e.clientY - vp.top;
+  const w0 = screenToWorld(e.clientX, e.clientY);
+  const marquee = el('div.mm-marquee');
+  marquee.style.left = x0 + 'px';
+  marquee.style.top = y0 + 'px';
+  marquee.style.width = '0px';
+  marquee.style.height = '0px';
+  viewport.append(marquee);
+  try { viewport.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
+  const move = ev => {
+    const x = ev.clientX - vp.left, y = ev.clientY - vp.top;
+    marquee.style.left = Math.min(x0, x) + 'px';
+    marquee.style.top = Math.min(y0, y) + 'px';
+    marquee.style.width = Math.abs(x - x0) + 'px';
+    marquee.style.height = Math.abs(y - y0) + 'px';
+  };
+  const up = ev => {
+    viewport.removeEventListener('pointermove', move);
+    viewport.removeEventListener('pointerup', up);
+    viewport.removeEventListener('pointercancel', up);
+    marquee.remove();
+    const w1 = screenToWorld(ev.clientX, ev.clientY);
+    const minX = Math.min(w0.x, w1.x), maxX = Math.max(w0.x, w1.x);
+    const minY = Math.min(w0.y, w1.y), maxY = Math.max(w0.y, w1.y);
+    let firstAdded = null;
+    for (const node of store.nodes.values()) {
+      const c = noteBox(node);
+      if (c.cx >= minX && c.cx <= maxX && c.cy >= minY && c.cy <= maxY) {
+        selection.add(node.id);
+        if (firstAdded == null) firstAdded = node.id;
+      }
+    }
+    if (firstAdded != null) {
+      anchorId = firstAdded;
+      selectedId = null;
+      renderSelectionBar();
+      renderSelections();
+    }
+  };
+  viewport.addEventListener('pointermove', move);
+  viewport.addEventListener('pointerup', up);
+  viewport.addEventListener('pointercancel', up);
 }
 
 function clearSelection() {
   selection.clear();
   selectedId = null;
+  anchorId = null;
   renderSelectionBar();
   renderSelections();
 }
@@ -778,7 +842,24 @@ function clearSelection() {
 function toggleSelect(node, subtree) {
   const ids = subtree ? [node.id, ...descendantIds(node.id)] : [node.id];
   const allSelected = ids.every(id => selection.has(id));
-  for (const id of ids) allSelected ? selection.delete(id) : selection.add(id);
+  if (allSelected) for (const id of ids) selection.delete(id);
+  else { for (const id of ids) selection.add(id); anchorId = node.id; }
+  selectedId = selection.size === 1 ? [...selection][0] : null;
+  renderSelectionBar();
+  renderSelections();
+}
+
+/** Keep anchorId pointing at a note that is actually selected. */
+function syncAnchor() {
+  if (anchorId != null && selection.has(anchorId)) return;
+  anchorId = selection.size ? [...selection][selection.size - 1] : null;
+}
+
+/** Select the whole subtree of the last note added to the selection. */
+function selectSubtreeOfAnchor() {
+  syncAnchor();
+  if (anchorId == null) return;
+  for (const id of [anchorId, ...descendantIds(anchorId)]) selection.add(id);
   selectedId = selection.size === 1 ? [...selection][0] : null;
   renderSelectionBar();
   renderSelections();
@@ -803,8 +884,8 @@ function renderSelectionBar() {
   toolbar.append(
     panel(
       el('span.select-count', null, t('app.selectedCount', { n: selection.size })),
-      el('button.btn.small' + (selectSubtreeMode ? ' active' : ''), {
-        onclick: () => { selectSubtreeMode = !selectSubtreeMode; renderSelectionBar(); },
+      el('button.btn.small', {
+        onclick: () => selectSubtreeOfAnchor(),
         title: t('app.selectSubtreeHint'),
       }, t('app.selectSubtree')),
     ),
@@ -822,25 +903,49 @@ function renderSelectionBar() {
 function bulkColor(anchor) {
   const nodes = [...selection].map(id => store.nodes.get(id)).filter(Boolean);
   if (!nodes.length) return;
-  const { pop, close } = openPop(anchor);
+  const els = nodes.map(n => ({ id: n.id, el: notesLayer.querySelector(`.note[data-id="${n.id}"]`) }));
+  const reset = () => {
+    for (const { id, el } of els) {
+      const cur = store.nodes.get(id);
+      if (cur && el) el.setAttribute('style', noteStyle(cur));
+    }
+  };
+  const { pop, close } = openPop(anchor, reset);
+
+  const apply = async h => {
+    pushAction(groupAction(nodes.map(n => colorAction(n.id, n.hue ?? null, h))));
+    try {
+      const patch = h == null ? { clearHue: true } : { hue: h };
+      for (const n of nodes) mergeNode(await api.patch(`/api/nodes/${n.id}`, patch));
+      close();
+    } catch (e) { toast(e.message, 'error'); reset(); }
+  };
+
+  const swatches = el('div.color-swatches', null,
+    [null, ...NOTE_PALETTE].map(h =>
+      el('button.swatch', {
+        style: h == null ? 'background:var(--note-default)' : `background:hsl(${h} var(--note-sat) var(--note-lum))`,
+        title: h == null ? t('mm.defaultColor') : t('mm.hue', { h }),
+        onclick: () => apply(h),
+      }),
+    ),
+  );
+  const colorPreview = el('span.hue-preview', { style: `background:hsl(${nodes[0].hue ?? 35} var(--note-sat) var(--note-lum))` });
+  const slider = el('input.hue-slider', {
+    type: 'range', min: 0, max: 359, value: nodes[0].hue ?? 35,
+    oninput: e => {
+      swatches.querySelectorAll('.swatch.active').forEach(s => s.classList.remove('active'));
+      const h = Number(e.target.value);
+      colorPreview.style.background = `hsl(${h} var(--note-sat) var(--note-lum))`;
+      els.forEach(({ el }) => el?.style.setProperty('--hue', h));
+    },
+    onchange: e => apply(Number(e.target.value)),
+  });
+
   pop.append(
     el('div.pop-title', null, t('app.bulkColor')),
-    el('div.color-swatches', null,
-      [null, ...NOTE_PALETTE].map(h =>
-        el('button.swatch', {
-          style: h == null ? 'background:var(--note-default)' : `background:hsl(${h} var(--note-sat) var(--note-lum))`,
-          title: h == null ? t('mm.defaultColor') : t('mm.hue', { h }),
-          onclick: async () => {
-            pushAction(groupAction(nodes.map(n => colorAction(n.id, n.hue ?? null, h))));
-            try {
-              const patch = h == null ? { clearHue: true } : { hue: h };
-              for (const n of nodes) mergeNode(await api.patch(`/api/nodes/${n.id}`, patch));
-              close();
-            } catch (e) { toast(e.message, 'error'); }
-          },
-        }),
-      ),
-    ),
+    swatches,
+    el('div.hue-row', null, slider, colorPreview),
   );
 }
 
@@ -965,12 +1070,17 @@ async function bulkDelete() {
 // --- selection & presence visuals ----------------------------------------------
 
 function renderSelections() {
+  syncAnchor();
   notesLayer?.querySelectorAll('.note').forEach(n => {
-    n.classList.remove('remote-selected', 'selected');
+    n.classList.remove('remote-selected', 'selected', 'anchor');
     n.querySelector('.remote-tag')?.remove();
   });
   for (const id of selection) {
     notesLayer?.querySelector(`.note[data-id="${id}"]`)?.classList.add('selected');
+  }
+  // the most-recently-added note gets a distinct ring so it's easy to spot
+  if (anchorId != null && selection.has(anchorId)) {
+    notesLayer?.querySelector(`.note[data-id="${anchorId}"]`)?.classList.add('anchor');
   }
   // the single-clicked note (not part of a multi-selection) gets the frame too,
   // so "what is selected right now" is always visibly highlighted
@@ -1246,6 +1356,7 @@ export function bindToolbar(apiObj) { toolbarApi = apiObj; }
 function emitToolbar() {
   toolbarApi?.onModeChange?.(editMode);
   toolbarApi?.onSelectModeChange?.(selectMode);
+  toolbarApi?.onAreaSelectChange?.(areaSelectMode);
 }
 
 export function zoomBy(factor) {
