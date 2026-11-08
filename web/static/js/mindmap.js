@@ -132,10 +132,7 @@ function buildNote(node) {
   });
   n.addEventListener('pointerdown', e => onNotePointerDown(e, node, n));
   n.addEventListener('click', e => {
-    if (selectMode && canEdit()) {
-      toggleSelect(node, e.shiftKey || selectSubtreeMode);
-      return;
-    }
+    if (selectMode && canEdit()) return; // selection is handled by the pointer gesture
     if (selectedId !== node.id) {
       selectedId = node.id;
       renderSelections();
@@ -531,9 +528,9 @@ function onNotePointerDown(e, node, elNode) {
   // checkbox & buttons handle themselves
   if (e.target.closest('.note-check, .note-btn')) return;
 
-  // in select mode, clicking toggles selection (handled by the click handler);
-  // nothing drags or relinks here
-  if (selectMode && canEdit()) return;
+  // in select mode, one gesture both selects (tap) and moves (drag) — handled
+  // on pointer events so taps register instantly and the whole selection moves
+  if (selectMode && canEdit()) return startSelectGesture(e, node, elNode);
 
   select(node.id);
 
@@ -544,6 +541,70 @@ function onNotePointerDown(e, node, elNode) {
   if (editMode && canEdit() && resizeHandle) return startResize(e, node, elNode);
   if (editMode && canEdit()) return startMove(e, node, elNode);
   // view mode: no repositioning; click already selects
+}
+
+/** In select mode, one gesture both selects (tap) and moves (drag) the notes.
+ *  Handled on pointer events — not `click` — so a tap registers immediately on
+ *  touch (no click delay/suppression), which also makes the highlight instant
+ *  and lets the subtree button + shift-tap apply reliably. */
+function startSelectGesture(e, node, elNode) {
+  e.preventDefault();
+  const subtree = e.shiftKey || selectSubtreeMode;
+  const startScreen = { x: e.clientX, y: e.clientY };
+  const start = screenToWorld(e.clientX, e.clientY);
+  // drag the whole selection when the grabbed note is already selected, else
+  // just this note (and add it to the selection once it starts moving)
+  const groupIds = selection.has(node.id) ? [...selection] : [node.id];
+  const group = groupIds.map(id => store.nodes.get(id)).filter(Boolean);
+  const origs = new Map(group.map(n => [n.id, { x: n.x, y: n.y }]));
+  const els = group.map(n => ({ n, el: notesLayer.querySelector(`.note[data-id="${n.id}"]`) }));
+  let dragging = false;
+  try { elNode.setPointerCapture(e.pointerId); } catch { /* synthetic pointers */ }
+
+  const move = ev => {
+    if (!dragging) {
+      if (Math.hypot(ev.clientX - startScreen.x, ev.clientY - startScreen.y) < 4) return;
+      dragging = true;
+      for (const id of groupIds) selection.add(id);
+      els.forEach(({ el }) => el?.classList.add('dragging'));
+    }
+    const cur = screenToWorld(ev.clientX, ev.clientY);
+    const dx = cur.x - start.x, dy = cur.y - start.y;
+    for (const { n, el } of els) {
+      const o = origs.get(n.id);
+      n.x = o.x + dx; n.y = o.y + dy;
+      if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+    }
+    scheduleEdges();
+  };
+  const up = () => {
+    elNode.removeEventListener('pointermove', move);
+    elNode.removeEventListener('pointerup', up);
+    elNode.removeEventListener('pointercancel', up);
+    els.forEach(({ el }) => el?.classList.remove('dragging'));
+    if (!dragging) {
+      toggleSelect(node, subtree); // tap → toggle, highlight appears immediately
+      return;
+    }
+    selectedId = null;
+    renderSelectionBar();
+    renderSelections();
+    const steps = [];
+    for (const { n } of els) {
+      const o = origs.get(n.id);
+      if (n.x === o.x && n.y === o.y) continue;
+      steps.push(patchAction(n.id, { x: o.x, y: o.y }, { x: n.x, y: n.y }));
+    }
+    if (steps.length) pushAction(steps.length === 1 ? steps[0] : groupAction(steps));
+    (async () => {
+      try {
+        for (const { n } of els) mergeNode(await api.patch(`/api/nodes/${n.id}`, { x: n.x, y: n.y }));
+      } catch (err) { toast(err.message, 'error'); }
+    })();
+  };
+  elNode.addEventListener('pointermove', move);
+  elNode.addEventListener('pointerup', up);
+  elNode.addEventListener('pointercancel', up);
 }
 
 function startMove(e, node, elNode) {
@@ -730,27 +791,31 @@ function descendantIds(id) {
   return out;
 }
 
-/** Floating toolbar shown while notes are selected: count + bulk actions. */
+/** Floating toolbar shown while notes are selected: count + bulk actions.
+ *  Rendered as several panels so the toolbar's own flex-wrap breaks them onto
+ *  multiple lines on narrow screens instead of overflowing the viewport. */
 function renderSelectionBar() {
   const toolbar = viewport?.querySelector('.mm-toolbar');
-  let bar = toolbar?.querySelector('#mm-sel-panel');
-  if (selection.size === 0) { bar?.remove(); return; }
-  if (!toolbar) return;
-  if (!bar) {
-    bar = el('div.tb-panel', { id: 'mm-sel-panel' });
-    toolbar.append(bar);
-  }
-  clear(bar);
-  bar.append(
-    el('span.select-count', null, t('app.selectedCount', { n: selection.size })),
-    el('button.btn.small' + (selectSubtreeMode ? ' active' : ''), {
-      onclick: e => { selectSubtreeMode = !selectSubtreeMode; renderSelectionBar(); },
-      title: t('app.selectSubtreeHint'),
-    }, t('app.selectSubtree')),
-    el('button.btn.small', { onclick: e => bulkColor(e.currentTarget) }, t('app.bulkColor')),
-    el('button.btn.small', { onclick: e => bulkResize(e.currentTarget) }, t('app.bulkResize')),
-    el('button.btn.small.ghost', { onclick: () => clearSelection() }, t('app.clearSelection')),
-    el('button.btn.small.danger', { onclick: () => bulkDelete() }, t('app.bulkDelete')),
+  toolbar?.querySelectorAll('.mm-sel-panel').forEach(p => p.remove());
+  if (selection.size === 0 || !toolbar) return;
+
+  const panel = (...children) => el('div.tb-panel.mm-sel-panel', null, ...children);
+  toolbar.append(
+    panel(
+      el('span.select-count', null, t('app.selectedCount', { n: selection.size })),
+      el('button.btn.small' + (selectSubtreeMode ? ' active' : ''), {
+        onclick: () => { selectSubtreeMode = !selectSubtreeMode; renderSelectionBar(); },
+        title: t('app.selectSubtreeHint'),
+      }, t('app.selectSubtree')),
+    ),
+    panel(
+      el('button.btn.small', { onclick: e => bulkColor(e.currentTarget) }, t('app.bulkColor')),
+      el('button.btn.small', { onclick: e => bulkResize(e.currentTarget) }, t('app.bulkResize')),
+    ),
+    panel(
+      el('button.btn.small.ghost', { onclick: () => clearSelection() }, t('app.clearSelection')),
+      el('button.btn.small.danger', { onclick: () => bulkDelete() }, t('app.bulkDelete')),
+    ),
   );
 }
 
@@ -1093,6 +1158,12 @@ function startTitleEdit(node) {
         mergeNode(await api.patch(`/api/nodes/${node.id}`, { title: val }));
         return;
       } catch (e) { toast(e.message, 'error'); }
+    }
+    // A fresh note abandoned with no title has no reason to exist — remove it
+    // (mirrors the list view, so "add note" + tap-away never leaves empties).
+    const meta = consumeCreate(node.id);
+    if (!val && meta) {
+      try { await api.del(`/api/nodes/${node.id}`); removeNodes([node.id]); } catch {}
     }
     renderAllNotes();
   };

@@ -207,3 +207,43 @@ func strPtr(s string) *string    { return &s }
 func boolPtr(b bool) *bool       { return &b }
 func fPtr(f float64) *float64    { return &f }
 func intPtr(i int) *int          { return &i }
+
+func TestPurgeDeleted(t *testing.T) {
+	s := testSetup(t)
+	r, _ := s.Create(1, nil, "root", 0, 0)
+	c, _ := s.Create(1, &r.ID, "child", 0, 0)
+	keep, _ := s.Create(1, nil, "keep", 0, 0)
+
+	// soft-delete the subtree; "keep" stays live
+	if err := s.Delete(r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if boards, _ := s.DeletedBoards(); len(boards) != 1 || boards[0] != 1 {
+		t.Fatalf("DeletedBoards = %v, want [1]", boards)
+	}
+
+	n, err := s.PurgeDeleted(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// n counts only the rows the DELETE matched directly; the child is removed by
+	// the parent_id FK cascade, so the exact count is not meaningful — the point
+	// is that nothing soft-deleted survives.
+	if n < 1 {
+		t.Fatalf("purged = %d rows, want >= 1", n)
+	}
+	// deleted nodes are gone for good (even by BoardOf, which ignores the flag)
+	if _, err := s.BoardOf(r.ID); err != ErrNotFound {
+		t.Fatalf("purged root still resolvable: %v", err)
+	}
+	if _, err := s.BoardOf(c.ID); err != ErrNotFound {
+		t.Fatalf("purged child still resolvable: %v", err)
+	}
+	// the live node is untouched
+	if _, err := s.Node(keep.ID); err != nil {
+		t.Fatalf("live node lost: %v", err)
+	}
+	if boards, _ := s.DeletedBoards(); len(boards) != 0 {
+		t.Fatalf("DeletedBoards after purge = %v, want empty", boards)
+	}
+}

@@ -342,7 +342,7 @@ function boardMenu(anchor) {
       }
     } }, '✎  ' + t('app.renameBoard')),
     el('button.menu-item', { onclick: () => { close(); openShareDialog(); } }, t('app.share')),
-    el('button.menu-item', { onclick: () => { close(); exportMarkdown(); } }, t('app.exportMd')),
+    el('button.menu-item', { onclick: () => { close(); exportDialog(); } }, t('app.export')),
     el('button.menu-item', { onclick: () => { close(); importMarkdown(); } }, t('app.import')),
     el('button.menu-item', { onclick: async () => {
       close();
@@ -408,25 +408,94 @@ function buildMarkdown() {
   return lines.length ? lines.join('\n') + '\n' : '';
 }
 
-function exportMarkdown() {
+/** Build the board in the user's own pattern (the "custom" format): notes are
+ *  prefixed note/checked lines, fields are indented lines matching the field
+ *  patterns. Mirrors buildMarkdown's shape. Returns '' when the board is empty. */
+function buildCustom(cfg) {
+  const b = store.board?.board;
+  if (!b) return '';
+  const noteP = cfg.notePrefix || '';
+  const doneP = cfg.donePrefix || '';
+  const indent = cfg.indent ?? '    ';
+  const fieldOf = f => {
+    const p = cfg.fields[f.type];
+    if (!p || !(p.prefix || '').length) return null; // no pattern → skip the field
+    return p.prefix + (f.type === 'image' ? `file:${f.value}` : f.value) + (p.suffix || '');
+  };
+  const lines = [];
+  const walk = (id, depth) => {
+    for (const n of nodeChildren(id)) {
+      const prefix = n.done && doneP ? doneP : noteP;
+      lines.push(indent.repeat(depth) + prefix + (mdEscape(noteMainText(n)) || t('list.untitled')));
+      for (const f of noteBodyFields(n)) {
+        const line = fieldOf(f);
+        if (line) lines.push(indent.repeat(depth + 1) + line);
+      }
+      walk(n.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return lines.length ? lines.join('\n') + '\n' : '';
+}
+
+/** Export dialog: pick Markdown or Custom (own pattern) — same format toggle as
+ *  import — then copy or download the generated text. */
+function exportDialog() {
   const b = store.board?.board;
   if (!b) return;
-  const md = buildMarkdown();
-  if (!md) { toast(t('app.noNotesToExport'), 'error'); return; }
 
+  const formatMd = el('button.btn.small', { onclick: () => setFormat('md') }, t('md.formatMarkdown'));
+  const formatCustom = el('button.btn.small', { onclick: () => setFormat('custom') }, t('md.formatCustom'));
+
+  const notePat = customNoteInputs();
+  const fieldPat = customFieldInputs();
+  const noteWrap = el('div.import-note-patterns', null, el('div.dim', null, t('md.customNoteHint')), notePat.grid);
+  const advanced = el('details.import-advanced', null,
+    el('summary', null, t('md.advanced')),
+    el('div.import-advanced-body', null, el('div.dim', null, t('md.customHint')), fieldPat.grid),
+  );
+
+  const ta = mdTextarea('', true);
   const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } },
     el('div.modal.md-modal',
       el('h3.modal-title', null, t('md.exportTitle')),
+      el('div.import-settings',
+        el('div.import-formats', null,
+          el('span.modal-label', null, t('md.formatLabel')),
+          formatMd,
+          formatCustom,
+        ),
+        noteWrap,
+        advanced,
+      ),
       el('div.md-readonly-note', null, t('md.readonly')),
-      mdTextarea(md, true),
+      ta,
       el('div.modal-actions',
         el('button.btn.ghost', { onclick: () => overlay.remove() }, t('common.close')),
-        el('button.btn', { onclick: () => copyMarkdown(md) }, t('md.copy')),
-        el('button.btn.primary', { onclick: () => downloadMarkdown(md, b.name) }, t('md.download')),
+        el('button.btn', { onclick: () => copyMarkdown(ta.value) }, t('md.copy')),
+        el('button.btn.primary', { onclick: () => downloadMarkdown(ta.value, b.name) }, t('md.download')),
       ),
     ),
   );
   document.body.append(overlay);
+
+  let format = 'md';
+  function setFormat(f) {
+    format = f;
+    formatMd.classList.toggle('active', f === 'md');
+    formatCustom.classList.toggle('active', f === 'custom');
+    noteWrap.hidden = f !== 'custom';
+    advanced.hidden = f !== 'custom';
+    update();
+  }
+  function update() {
+    ta.value = format === 'custom'
+      ? buildCustom(customConfig(notePat.cfg, fieldPat.cfg))
+      : buildMarkdown();
+  }
+  overlay.querySelectorAll('.pattern-grid input').forEach(inp => inp.addEventListener('input', update));
+  setFormat('md');
+  if (!store.nodes.size) toast(t('app.noNotesToExport'), 'error');
 }
 
 function copyMarkdown(md) {
@@ -462,9 +531,9 @@ const CUSTOM_DEFAULTS = {
   indent: '    ',
   fields: {
     text: { prefix: '* ', suffix: '' },
-    date: { prefix: '', suffix: '' },
+    date: { prefix: '📅 ', suffix: '' },
     time: { prefix: '[', suffix: ']' },
-    datetime: { prefix: '', suffix: '' },
+    datetime: { prefix: '📆 ', suffix: '' },
     link: { prefix: '-- ', suffix: '' },
   },
 };

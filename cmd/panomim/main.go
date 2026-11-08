@@ -77,8 +77,9 @@ func run() error {
 		Presence: hub,
 		Notify:   hub.Broadcast,
 	}
+	nodeStore := &nodes.Store{DB: database}
 	nh := &nodes.Handlers{
-		Store:  &nodes.Store{DB: database},
+		Store:  nodeStore,
 		Boards: bh.Store,
 		Emit:   hub.Broadcast,
 	}
@@ -97,6 +98,9 @@ func run() error {
 		deps.DevDir = cfg.DevDir
 	}
 	handler := server.Router(deps)
+
+	// Purge soft-deleted notes once a board's editing session has ended.
+	startPurgeCleanup(hub, nodeStore)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -172,6 +176,47 @@ func mustListen(addr string) net.Listener {
 		log.Fatal(err)
 	}
 	return ln
+}
+
+// startPurgeCleanup hard-deletes soft-deleted notes after a board's editing
+// session ends. Soft-deletes are kept only so the deleting client can undo
+// within the session; once the last user leaves a board room there is no undo
+// stack left to satisfy, so the rows are purged for good.
+//
+// Two triggers: the room-empty hook (with a short grace for transient reconnects)
+// and a periodic sweep that catches boards which emptied before this process
+// noticed or while it was down.
+func startPurgeCleanup(hub *realtime.Hub, store *nodes.Store) {
+	purge := func(boardID int64) {
+		if len(hub.OnlineUsers(boardID)) > 0 {
+			return // still an active session — undo may need the rows
+		}
+		n, err := store.PurgeDeleted(boardID)
+		if err != nil {
+			log.Printf("purge deleted (board %d): %v", boardID, err)
+		} else if n > 0 {
+			log.Printf("purged %d soft-deleted note(s) from board %d", n, boardID)
+		}
+	}
+
+	hub.OnRoomEmpty = func(boardID int64) {
+		go func() {
+			time.Sleep(30 * time.Second) // let transient reconnects settle first
+			purge(boardID)
+		}()
+	}
+
+	go func() {
+		for range time.Tick(2 * time.Minute) {
+			ids, err := store.DeletedBoards()
+			if err != nil {
+				continue
+			}
+			for _, id := range ids {
+				purge(id)
+			}
+		}
+	}()
 }
 
 // ensureJWTSecret loads (or creates) the token signing secret from the meta

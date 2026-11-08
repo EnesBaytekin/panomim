@@ -76,6 +76,7 @@ const dict = {
     'app.boardName': 'pano adı',
     'app.renameBoard': 'Panoyu yeniden adlandır',
     'app.share': '👥  Paylaş',
+    'app.export': '⬇  Dışa aktar',
     'app.exportMd': '⬇  Markdown dışa aktar',
     'app.importMd': '⬆  Markdown içe aktar',
     'app.deleteBoardTitle': '“{name}” silinsin mi?',
@@ -234,7 +235,7 @@ const dict = {
 
     // markdown
     'md.importTitle': 'İçe aktar',
-    'md.exportTitle': 'Markdown dışa aktar',
+    'md.exportTitle': 'Dışa aktar',
     'md.pasteLabel': 'Metin yapıştır',
     'md.pastePlaceholder': 'İçe aktarılacak metni buraya yapıştır…',
     'md.chooseFile': 'Dosya seç',
@@ -342,6 +343,7 @@ const dict = {
     'app.boardName': 'board name',
     'app.renameBoard': 'Rename board',
     'app.share': '👥  Share',
+    'app.export': '⬇  Export',
     'app.exportMd': '⬇  Export Markdown',
     'app.importMd': '⬆  Import Markdown',
     'app.deleteBoardTitle': 'Delete “{name}”?',
@@ -500,7 +502,7 @@ const dict = {
 
     // markdown
     'md.importTitle': 'Import',
-    'md.exportTitle': 'Export markdown',
+    'md.exportTitle': 'Export',
     'md.pasteLabel': 'Paste text',
     'md.pastePlaceholder': 'Paste the text to import here…',
     'md.chooseFile': 'Choose file',

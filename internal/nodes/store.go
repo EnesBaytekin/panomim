@@ -406,6 +406,39 @@ func (s *Store) BoardOf(nodeID int64) (int64, error) {
 	return b, err
 }
 
+// DeletedBoards lists the distinct board ids that still hold soft-deleted nodes
+// awaiting purge. Used by the cleanup loop to sweep boards cheaply.
+func (s *Store) DeletedBoards() ([]int64, error) {
+	rows, err := s.DB.Query(`SELECT DISTINCT board_id FROM nodes WHERE deleted = 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// PurgeDeleted hard-deletes a board's soft-deleted nodes (their fields go with
+// them via the node_fields FK cascade), returning how many rows were removed.
+// It is meant to run only after the board's editing session has ended — undo
+// keeps soft-deleted rows recoverable until then, and there is nothing left to
+// recover once everyone has left the board.
+func (s *Store) PurgeDeleted(boardID int64) (int64, error) {
+	res, err := s.DB.Exec(`DELETE FROM nodes WHERE board_id = ? AND deleted = 1`, boardID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // TouchBoard bumps the board's updated_at and returns the new timestamp.
 func (s *Store) TouchBoard(boardID int64) int64 {
 	now := time.Now().Unix()

@@ -184,6 +184,10 @@ img { max-width: 100%; }
 .icon-btn.tiny { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
 .icon-btn.lang-btn { width: auto; padding: 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
 
+/* The `hidden` attribute must always win over `display` rules (e.g. `.import-note-patterns`
+   sets display:flex and would otherwise defeat noteWrap.hidden in markdown mode). */
+[hidden] { display: none !important; }
+
 .link {
   background: none;
   border: none;
@@ -451,7 +455,9 @@ select.input { cursor: pointer; }
 }
 .avatar-modal .profile-name { font-size: 18px; }
 .avatar-modal .modal-actions { width: 100%; justify-content: center; }
-.presence-user { display: flex; align-items: center; gap: 10px; line-height: 1.2; }
+/* menu-item.presence-user (higher specificity than .menu-item's display:block
+   below) keeps photo + name side-by-side and vertically centered */
+.menu-item.presence-user { display: flex; align-items: center; gap: 10px; line-height: 1.2; }
 .presence-user .avatar { width: 26px; height: 26px; font-size: 11px; flex: none; }
 .presence-user .presence-username { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -599,18 +605,18 @@ select.input { cursor: pointer; }
   box-shadow: inset 0 0 0 1.5px var(--sel-color, var(--accent));
 }
 /* keep the checkbox / chevron / grip lined up with the first title line */
-.tree-row .check, .tree-row .chevron { margin-top: 1px; }
+.tree-row .check, .tree-row .chevron { margin-top: 2px; }
 
 .chevron {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   display: inline-grid;
   place-items: center;
   border: none;
   background: transparent;
   color: var(--ink-soft);
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
   border-radius: 5px;
   transform: rotate(90deg);
@@ -622,13 +628,13 @@ select.input { cursor: pointer; }
 
 .check {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 46% 54% 52% 48% / 55% 46% 54% 45%; /* hand-drawn circle */
   border: 1.5px solid var(--line-strong);
   background: transparent;
   color: transparent;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 900;
   cursor: pointer;
   display: inline-grid;
@@ -666,10 +672,17 @@ select.input { cursor: pointer; }
 /* far-right cluster: field indicator (always visible) + ⋯ menu + drag grip */
 .row-tail {
   margin-left: auto;
+  margin-top: 2px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 1px;
   flex: none;
+}
+.row-tail .icon-btn {
+  width: 18px;
+  height: 18px;
+  font-size: 13px;
+  border-radius: 5px;
 }
 .row-tail .icon-btn,
 .row-tail .drag-grip {
@@ -684,14 +697,14 @@ select.input { cursor: pointer; }
 /* tiny "has fields" marker — click (or click the note) to expand/collapse them */
 .field-toggle {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   display: inline-grid;
   place-items: center;
   border: none;
   background: transparent;
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   font-weight: 700;
   cursor: pointer;
@@ -706,14 +719,12 @@ select.input { cursor: pointer; }
 
 .drag-grip {
   flex: none;
-  width: 12px;
-  height: 16px;
-  align-self: flex-start;
-  margin-top: 1px;
+  width: 14px;
+  height: 18px;
   display: inline-grid;
   place-items: center;
   color: var(--ink-soft);
-  font-size: 10px;
+  font-size: 11px;
   cursor: grab;
   touch-action: none; /* touch drags come from here, scrolling stays native elsewhere */
   user-select: none;
