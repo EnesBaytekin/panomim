@@ -246,6 +246,12 @@ var migrations = []migration{
 			`CREATE INDEX IF NOT EXISTS idx_friends_friend ON friends(friend_id)`,
 		},
 	},
+	{
+		version: 9, // soft-delete: silinen notlar geri alınana dek satırda tutulur
+		stmts: []string{
+			`ALTER TABLE nodes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // Now returns the current unix time used for all timestamp columns.

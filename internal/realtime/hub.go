@@ -29,6 +29,11 @@ type Hub struct {
 	mu      sync.Mutex
 	rooms   map[int64]map[*Client]bool
 	tickets map[string]ticket
+
+	// OnRoomEmpty, when set, is invoked after the last client leaves a board
+	// room — the natural end of an editing session (used to purge soft-deletes).
+	// It is called without the hub lock held.
+	OnRoomEmpty func(boardID int64)
 }
 
 type ticket struct {
@@ -97,15 +102,24 @@ func (h *Hub) Join(c *Client) []Presence {
 
 // Leave removes a client from its room; reports whether it was present.
 func (h *Hub) Leave(c *Client) {
+	var emptied int64
+	var empty bool
 	h.mu.Lock()
 	room := h.rooms[c.BoardID]
 	if room != nil {
 		delete(room, c)
 		if len(room) == 0 {
 			delete(h.rooms, c.BoardID)
+			emptied = c.BoardID
+			empty = true
 		}
 	}
 	h.mu.Unlock()
+	if empty {
+		if fn := h.OnRoomEmpty; fn != nil {
+			fn(emptied)
+		}
+	}
 }
 
 // Presence is the public identity of an online user.

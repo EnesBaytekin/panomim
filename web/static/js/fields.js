@@ -2,6 +2,7 @@
 import { api, fileURL } from './api.js';
 import { el, popover, fmtDate, debounce, toast } from './ui.js';
 import { store, upsertNode, canEdit } from './store.js';
+import { pushAction, fieldPatchAction, fieldAddAction, fieldDeleteAction } from './undo.js';
 import { t } from './i18n.js';
 
 /** img whose src resolves through the authenticated blob loader
@@ -94,9 +95,14 @@ export function openFieldEditor(nodeId, anchor) {
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
 function fieldRow(node, f, rerender) {
+  let prev = f.value;
   const save = debounce(async value => {
+    if (value === prev) return;
     try {
+      const before = prev;
       const nf = await api.patch(`/api/fields/${f.id}`, { value });
+      pushAction(fieldPatchAction(f.id, before, value));
+      prev = value;
       applyFieldLocal(nf);
     } catch (e) { toast(e.message, 'error'); }
   }, 600);
@@ -165,6 +171,7 @@ async function moveField(node, f, dir, rerender) {
 
 async function removeField(f) {
   try {
+    pushAction(fieldDeleteAction(f));
     await api.del(`/api/fields/${f.id}`);
     const node = store.nodes.get(f.nodeId);
     if (node) {
@@ -199,6 +206,7 @@ function addRow(node, rerender) {
         try {
           const defaultValue = { text: '', date: new Date().toISOString().slice(0, 10), time: '09:00', datetime: new Date().toISOString().slice(0, 16), link: 'https://' }[type] || '';
           const f = await api.post(`/api/nodes/${node.id}/fields`, { type, value: defaultValue });
+          pushAction(fieldAddAction(node.id, type, defaultValue, f.id));
           const n = store.nodes.get(node.id);
           n.fields.push(f);
           upsertNode(n);

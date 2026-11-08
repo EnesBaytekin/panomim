@@ -97,6 +97,9 @@ function handle(msg) {
     case 'nodes_deleted':
       if (!mine) removeNodes(msg.ids || []);
       break;
+    case 'nodes_restored':
+      if (!mine) resync();
+      break;
     case 'field_created':
       if (!mine) applyField(msg.field);
       break;

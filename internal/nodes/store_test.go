@@ -97,7 +97,7 @@ func TestDeleteCascade(t *testing.T) {
 	s := testSetup(t)
 	r, _ := s.Create(1, nil, "root", 0, 0)
 	c, _ := s.Create(1, &r.ID, "child", 0, 0)
-	s.Create(1, &c.ID, "grandchild", 0, 0)
+	g, _ := s.Create(1, &c.ID, "grandchild", 0, 0)
 
 	ids, _ := s.SubtreeIDs(r.ID)
 	if len(ids) != 3 {
@@ -106,10 +106,37 @@ func TestDeleteCascade(t *testing.T) {
 	if err := s.Delete(r.ID); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	s.DB.QueryRow(`SELECT COUNT(*) FROM nodes`).Scan(&count)
-	if count != 0 {
-		t.Fatalf("cascade left %d nodes", count)
+	// soft-delete: rows stay, but the whole subtree is hidden
+	if n, _ := s.ListByBoard(1); len(n) != 0 {
+		t.Fatalf("ListByBoard returned %d nodes, want 0", len(n))
+	}
+	if _, err := s.Node(r.ID); err != ErrNotFound {
+		t.Fatalf("deleted root must be NotFound, got %v", err)
+	}
+	if _, err := s.Node(g.ID); err != ErrNotFound {
+		t.Fatalf("deleted grandchild must be NotFound, got %v", err)
+	}
+	// restore brings the subtree back with its hierarchy intact
+	got, err := s.Restore(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("restored = %v, want 3 ids", got)
+	}
+	if n, _ := s.ListByBoard(1); len(n) != 3 {
+		t.Fatalf("after restore ListByBoard returned %d nodes, want 3", len(n))
+	}
+	if n := mustNode(t, s, g.ID); n.ParentID == nil || *n.ParentID != c.ID {
+		t.Fatal("restored grandchild lost its parent")
+	}
+	// deleting again must fail (already live → ErrNotFound on double delete is
+	// exercised below via a fresh delete)
+	if err := s.Delete(r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(r.ID); err != ErrNotFound {
+		t.Fatalf("double delete: got %v, want ErrNotFound", err)
 	}
 }
 
@@ -180,3 +207,43 @@ func strPtr(s string) *string    { return &s }
 func boolPtr(b bool) *bool       { return &b }
 func fPtr(f float64) *float64    { return &f }
 func intPtr(i int) *int          { return &i }
+
+func TestPurgeDeleted(t *testing.T) {
+	s := testSetup(t)
+	r, _ := s.Create(1, nil, "root", 0, 0)
+	c, _ := s.Create(1, &r.ID, "child", 0, 0)
+	keep, _ := s.Create(1, nil, "keep", 0, 0)
+
+	// soft-delete the subtree; "keep" stays live
+	if err := s.Delete(r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if boards, _ := s.DeletedBoards(); len(boards) != 1 || boards[0] != 1 {
+		t.Fatalf("DeletedBoards = %v, want [1]", boards)
+	}
+
+	n, err := s.PurgeDeleted(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// n counts only the rows the DELETE matched directly; the child is removed by
+	// the parent_id FK cascade, so the exact count is not meaningful — the point
+	// is that nothing soft-deleted survives.
+	if n < 1 {
+		t.Fatalf("purged = %d rows, want >= 1", n)
+	}
+	// deleted nodes are gone for good (even by BoardOf, which ignores the flag)
+	if _, err := s.BoardOf(r.ID); err != ErrNotFound {
+		t.Fatalf("purged root still resolvable: %v", err)
+	}
+	if _, err := s.BoardOf(c.ID); err != ErrNotFound {
+		t.Fatalf("purged child still resolvable: %v", err)
+	}
+	// the live node is untouched
+	if _, err := s.Node(keep.ID); err != nil {
+		t.Fatalf("live node lost: %v", err)
+	}
+	if boards, _ := s.DeletedBoards(); len(boards) != 0 {
+		t.Fatalf("DeletedBoards after purge = %v, want empty", boards)
+	}
+}
