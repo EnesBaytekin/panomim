@@ -75,33 +75,13 @@ export function patchAction(id, before, after) {
   };
 }
 
-/** Delete a single node; undo recreates it (new id, same content/position). */
+/** Delete a node (and its subtree): undo restores it via the soft-delete
+ *  restore endpoint, keeping the original ids/fields/hierarchy. */
 export function deleteAction(node) {
-  const bid = boardId();
-  let currentId = node.id;
-  const snap = {
-    parentId: node.parentId ?? null,
-    title: node.title ?? '',
-    done: !!node.done,
-    hue: node.hue ?? null,
-    x: node.x ?? 0,
-    y: node.y ?? 0,
-    w: node.w ?? 0,
-    h: node.h ?? 0,
-    fields: (node.fields || []).map(f => ({ type: f.type, value: f.value })),
-  };
+  const id = node.id;
   return {
-    undo: async () => {
-      const created = await api.post(`/api/boards/${bid}/nodes`, {
-        parentId: snap.parentId, title: snap.title, x: Math.round(snap.x), y: Math.round(snap.y),
-      });
-      currentId = created.id;
-      if (snap.done) await api.patch(`/api/nodes/${created.id}/done`, { done: true }).catch(() => {});
-      if (snap.hue != null) await api.patch(`/api/nodes/${created.id}`, { hue: snap.hue }).catch(() => {});
-      if (snap.w || snap.h) await api.patch(`/api/nodes/${created.id}`, { w: snap.w, h: snap.h }).catch(() => {});
-      for (const f of snap.fields) await api.post(`/api/nodes/${created.id}/fields`, { type: f.type, value: f.value }).catch(() => {});
-    },
-    redo: async () => { await api.del(`/api/nodes/${currentId}`); },
+    undo: async () => { await api.post(`/api/nodes/${id}/restore`); },
+    redo: async () => { await api.del(`/api/nodes/${id}?withChildren=1`); },
   };
 }
 
@@ -117,6 +97,21 @@ export function createTitleAction(id, meta, title) {
         parentId: meta.parentId, title, x: Math.round(meta.x), y: Math.round(meta.y),
       });
       currentId = n.id;
+    },
+  };
+}
+
+/** Delete a node but keep its children: redo reparents the children away and
+ *  soft-deletes the node; undo restores the node and reparents children back. */
+export function reparentDeleteAction(nodeId, childIds, targetParent) {
+  return {
+    redo: async () => {
+      for (const cid of childIds) await api.patch(`/api/nodes/${cid}`, { parentId: targetParent });
+      await api.del(`/api/nodes/${nodeId}`);
+    },
+    undo: async () => {
+      await api.post(`/api/nodes/${nodeId}/restore`);
+      for (const cid of childIds) await api.patch(`/api/nodes/${cid}`, { parentId: nodeId });
     },
   };
 }

@@ -217,6 +217,45 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, 200, map[string]any{"ok": true, "deleted": ids})
 }
 
+// Restore un-deletes a node and its subtree (undo for Delete).
+func (h *Handlers) Restore(w http.ResponseWriter, r *http.Request) {
+	nodeID, err := strconv.ParseInt(r.PathValue("nodeID"), 10, 64)
+	if err != nil {
+		httpx.Err(w, 400, "invalid node id")
+		return
+	}
+	boardID, err := h.Store.BoardOf(nodeID)
+	if err == ErrNotFound {
+		httpx.Err(w, 404, "node not found")
+		return
+	}
+	if err != nil {
+		httpx.Err(w, 500, "lookup failed")
+		return
+	}
+	u := auth.UserFrom(r.Context())
+	if u == nil {
+		httpx.Err(w, 401, "unauthorized")
+		return
+	}
+	role, err := h.Boards.RoleOf(boardID, u.ID)
+	if err != nil || !roleAtLeast(role, boards.RoleEditor) {
+		httpx.Err(w, 403, "no access")
+		return
+	}
+	ids, err := h.Store.Restore(nodeID)
+	if err == ErrNotFound {
+		httpx.Err(w, 404, "node not found")
+		return
+	}
+	if err != nil {
+		httpx.Err(w, 500, "restore failed")
+		return
+	}
+	h.emit(boardID, map[string]any{"type": "nodes_restored", "ids": ids, "actor": httpx.ClientID(r)})
+	httpx.JSON(w, 200, map[string]any{"ok": true, "restored": ids})
+}
+
 // --- field handlers --------------------------------------------------------------
 
 type fieldReq struct {

@@ -453,9 +453,7 @@ select.input { cursor: pointer; }
 .avatar-modal .modal-actions { width: 100%; justify-content: center; }
 .presence-user { display: flex; align-items: center; gap: 10px; line-height: 1.2; }
 .presence-user .avatar { width: 26px; height: 26px; font-size: 11px; flex: none; }
-.presence-user .profile-id { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.presence-user .profile-name { font-weight: 700; font-size: 13px; }
-.presence-user .profile-sub { font-size: 11px; color: var(--ink-soft); }
+.presence-user .presence-username { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* --- content head ------------------------------------------------------------------ */
 
@@ -562,23 +560,34 @@ select.input { cursor: pointer; }
 }
 
 .tree { display: flex; flex-direction: column; gap: 2px; max-width: 900px; }
-.tree-kids { position: relative; margin-left: 24px; }
+.tree-kids { position: relative; margin-left: 22px; }
 .tree-kids::before {
   content: '';
   position: absolute;
-  left: -14px;
+  left: -13px;
   top: -3px;
   bottom: 7px;
   width: 1.5px;
   border-radius: 2px;
   background: var(--line-strong);
-  opacity: .7;
+  opacity: .85;
+}
+/* horizontal elbow from the parent's vertical guide line to each child row */
+.tree-kids > .tree-row::before {
+  content: '';
+  position: absolute;
+  left: -13px;
+  top: 16px;
+  width: 13px;
+  height: 1.5px;
+  background: var(--line-strong);
+  opacity: .85;
 }
 
 .tree-row {
   display: flex;
   align-items: flex-start;
-  gap: 5px;
+  gap: 4px;
   padding: 4px 10px 4px 6px;
   border-radius: 9px;
   position: relative;
@@ -594,14 +603,14 @@ select.input { cursor: pointer; }
 
 .chevron {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   display: inline-grid;
   place-items: center;
   border: none;
   background: transparent;
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
   border-radius: 5px;
   transform: rotate(90deg);
@@ -613,13 +622,13 @@ select.input { cursor: pointer; }
 
 .check {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 46% 54% 52% 48% / 55% 46% 54% 45%; /* hand-drawn circle */
   border: 1.5px solid var(--line-strong);
   background: transparent;
   color: transparent;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
   cursor: pointer;
   display: inline-grid;
@@ -654,40 +663,65 @@ select.input { cursor: pointer; }
 /* fields / note / image / date / time / link all live below the title on a second line */
 .tree-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 1px 4px 3px; min-width: 0; }
 .tree-fields:empty { display: none; }
-.row-actions {
+/* far-right cluster: field indicator (always visible) + ⋯ menu + drag grip */
+.row-tail {
   margin-left: auto;
   display: flex;
+  align-items: flex-start;
   gap: 1px;
+  flex: none;
+}
+.row-tail .icon-btn,
+.row-tail .drag-grip {
   opacity: 0;
   transition: opacity .13s;
-  flex: none;
-  align-self: flex-start;
 }
-.tree-row:hover .row-actions,
-.tree-row:focus-within .row-actions { opacity: 1; }
+.tree-row:hover .row-tail .icon-btn,
+.tree-row:hover .row-tail .drag-grip,
+.tree-row:focus-within .row-tail .icon-btn,
+.tree-row:focus-within .row-tail .drag-grip { opacity: 1; }
+
+/* tiny "has fields" marker — click (or click the note) to expand/collapse them */
+.field-toggle {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  opacity: .55;
+  border-radius: 4px;
+  padding: 0;
+}
+.field-toggle:hover { opacity: 1; background: var(--hover); }
+.field-toggle.open { color: var(--accent); opacity: .95; }
 
 /* --- drag & drop ------------------------------------------------------------------------------ */
 
 .drag-grip {
   flex: none;
-  width: 15px;
+  width: 12px;
+  height: 16px;
   align-self: flex-start;
-  margin-top: 3px;
+  margin-top: 1px;
   display: inline-grid;
   place-items: center;
   color: var(--ink-soft);
-  font-size: 12px;
+  font-size: 10px;
   cursor: grab;
-  opacity: 0;
-  transition: opacity .13s;
   touch-action: none; /* touch drags come from here, scrolling stays native elsewhere */
   user-select: none;
   -webkit-user-select: none;
   border-radius: 5px;
+  padding: 0;
 }
-.tree-row:hover .drag-grip,
-.drag-grip:focus-visible { opacity: .8; }
-.drag-grip:hover { opacity: 1; background: var(--hover); }
+.drag-grip:hover { background: var(--hover); }
 
 .drag-ghost {
   position: fixed;
@@ -835,6 +869,37 @@ a.field-chip:hover { color: var(--accent); }
   border-top: 1px dashed var(--line-strong);
 }
 .field-add select { flex: 1; }
+
+/* bulk-resize steppers (manual grow/shrink, two independent axes) */
+.stepper-row { display: flex; align-items: center; gap: 8px; }
+.stepper-row .pat-label { flex: none; min-width: 56px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.stepper-btn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+}
+.stepper-btn:hover { border-color: var(--accent); color: var(--accent); }
+.size-val {
+  flex: 1;
+  text-align: center;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 4px 0;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
 .field-image-edit { display: flex; align-items: center; gap: 8px; flex: 1; }
 .field-image-edit img { max-width: 190px; max-height: 110px; border-radius: 8px; border: 1px solid var(--line); }
 .field-link-row { display: flex; gap: 4px; flex: 1; align-items: center; }
@@ -926,7 +991,66 @@ a.field-chip:hover { color: var(--accent); }
 .import-settings { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .import-formats { display: flex; gap: 6px; }
 .import-formats .btn { flex: none; }
-.import-parent { width: 100%; }
+.import-parent {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.import-parent:hover { border-color: var(--accent); }
+.import-note-patterns { display: flex; flex-direction: column; gap: 6px; }
+
+/* in-page parent picker tree: minimalist, titles only, thin guide lines */
+.parent-modal { max-width: 400px; width: 92vw; }
+.parent-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  margin: 4px 0 6px;
+}
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 4px 8px 4px calc(8px + var(--d, 0) * 16px);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.tree-item:last-child { border-bottom: none; }
+.tree-item:hover { background: var(--hover); }
+.tree-arrow {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+.tree-arrow:hover { color: var(--ink); }
+.tree-arrow.spacer { cursor: default; }
+.parent-tree .tree-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.parent-tree .tree-title.root { font-weight: 600; color: var(--ink-soft); }
 .import-advanced {
   margin-top: 4px;
   padding-top: 10px;
@@ -951,6 +1075,12 @@ a.field-chip:hover { color: var(--accent); }
 .pattern-grid .pat-label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
 .pattern-grid .pat-head { font-size: 11px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
 .pattern-grid .input.small { width: 100%; min-width: 0; }
+/* pattern boxes are code-ish: fixed-width, aligned — keep them monospace */
+.pattern-grid .input.pattern-input,
+.input.pattern-input {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px;
+}
 .md-prev-head { display: flex; gap: 6px; align-items: baseline; font-size: 13px; font-weight: 700; color: var(--ink); }
 .md-count { font-size: 12px; font-weight: 400; color: var(--ink-soft); }
 .md-preview {
@@ -1230,6 +1360,12 @@ a.field-chip:hover { color: var(--accent); }
 }
 /* in selection mode, notes are click targets — show a pointer cursor */
 .mindmap-view.selecting .note.editable { cursor: pointer; }
+/* in selection mode a note is a pure selection target: its inner controls
+   (checkbox, +/⋯ tools, resize & relink handles) don't intercept the tap */
+.mindmap-view.selecting .note .note-check,
+.mindmap-view.selecting .note .note-btn,
+.mindmap-view.selecting .note .note-resize,
+.mindmap-view.selecting .note .note-link { pointer-events: none; }
 /* done: net biçimde "yapıldı" — soluk + doygunluğu düşük kağıt, üstü çizili başlık, köşede damga */
 .note.done .note-title { text-decoration: line-through; opacity: .55; }
 .note.done { filter: saturate(.3) contrast(.92); opacity: .75; }

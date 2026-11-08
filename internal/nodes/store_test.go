@@ -97,7 +97,7 @@ func TestDeleteCascade(t *testing.T) {
 	s := testSetup(t)
 	r, _ := s.Create(1, nil, "root", 0, 0)
 	c, _ := s.Create(1, &r.ID, "child", 0, 0)
-	s.Create(1, &c.ID, "grandchild", 0, 0)
+	g, _ := s.Create(1, &c.ID, "grandchild", 0, 0)
 
 	ids, _ := s.SubtreeIDs(r.ID)
 	if len(ids) != 3 {
@@ -106,10 +106,37 @@ func TestDeleteCascade(t *testing.T) {
 	if err := s.Delete(r.ID); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	s.DB.QueryRow(`SELECT COUNT(*) FROM nodes`).Scan(&count)
-	if count != 0 {
-		t.Fatalf("cascade left %d nodes", count)
+	// soft-delete: rows stay, but the whole subtree is hidden
+	if n, _ := s.ListByBoard(1); len(n) != 0 {
+		t.Fatalf("ListByBoard returned %d nodes, want 0", len(n))
+	}
+	if _, err := s.Node(r.ID); err != ErrNotFound {
+		t.Fatalf("deleted root must be NotFound, got %v", err)
+	}
+	if _, err := s.Node(g.ID); err != ErrNotFound {
+		t.Fatalf("deleted grandchild must be NotFound, got %v", err)
+	}
+	// restore brings the subtree back with its hierarchy intact
+	got, err := s.Restore(r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("restored = %v, want 3 ids", got)
+	}
+	if n, _ := s.ListByBoard(1); len(n) != 3 {
+		t.Fatalf("after restore ListByBoard returned %d nodes, want 3", len(n))
+	}
+	if n := mustNode(t, s, g.ID); n.ParentID == nil || *n.ParentID != c.ID {
+		t.Fatal("restored grandchild lost its parent")
+	}
+	// deleting again must fail (already live → ErrNotFound on double delete is
+	// exercised below via a fresh delete)
+	if err := s.Delete(r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(r.ID); err != ErrNotFound {
+		t.Fatalf("double delete: got %v, want ErrNotFound", err)
 	}
 }
 

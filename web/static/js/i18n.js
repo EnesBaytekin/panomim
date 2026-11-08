@@ -113,6 +113,7 @@ const dict = {
     'app.clearSelection': 'Temizle',
     'app.selectedCount': '{n} seçili',
     'app.selectSubtreeHint': 'Shift+tık → notu ve alt ağacını seç',
+    'app.selectSubtree': '🌲 Alt ağaç',
     'app.bulkColor': '🎨  Renk',
     'app.bulkResize': '↔  Boyut',
     'app.bulkDelete': '🗑  Sil',
@@ -124,6 +125,8 @@ const dict = {
     'app.resizeHeight': 'Yükseklik',
     'app.resizeApply': 'Uygula',
     'app.resizeAuto': 'otomatik',
+    'app.resizeShrink': 'küçült',
+    'app.resizeGrow': 'büyüt',
     'app.import': '⬆  İçe aktar',
 
     // list view
@@ -148,6 +151,8 @@ const dict = {
     'list.deleteAll': 'Hepsini sil',
     'list.menu': 'menü',
     'list.viewFields': '◫  Alanlar',
+    'list.expandFields': 'ek alanları göster',
+    'list.collapseFields': 'ek alanları gizle',
 
     // fields
     'field.note': 'Not',
@@ -248,6 +253,8 @@ const dict = {
     'md.formatCustom': 'Özel (kendi desenin)',
     'md.parentLabel': 'Nereye eklensin (üst not)',
     'md.parentRoot': '(kök — panonun en üstü)',
+    'md.parentPickerTitle': 'Üst notu seç',
+    'md.customNoteHint': 'Satırların hangi ön eklerle not sayılacağını ve alt seviyelerin nasıl girintileneceğini buradan ayarla.',
     'md.customNotePrefix': 'Not kağıdı ön eki',
     'md.customDonePrefix': 'İşaretli not kağıdı ön eki',
     'md.customIndent': 'Girinti (alt seviye)',
@@ -372,6 +379,7 @@ const dict = {
     'app.clearSelection': 'Clear',
     'app.selectedCount': '{n} selected',
     'app.selectSubtreeHint': 'Shift+click → select the note and its subtree',
+    'app.selectSubtree': '🌲 Subtree',
     'app.bulkColor': '🎨  Color',
     'app.bulkResize': '↔  Size',
     'app.bulkDelete': '🗑  Delete',
@@ -383,6 +391,8 @@ const dict = {
     'app.resizeHeight': 'Height',
     'app.resizeApply': 'Apply',
     'app.resizeAuto': 'auto',
+    'app.resizeShrink': 'shrink',
+    'app.resizeGrow': 'grow',
     'app.import': '⬆  Import',
 
     // list view
@@ -407,6 +417,8 @@ const dict = {
     'list.deleteAll': 'Delete all',
     'list.menu': 'menu',
     'list.viewFields': '◫  Fields',
+    'list.expandFields': 'show fields',
+    'list.collapseFields': 'hide fields',
 
     // fields
     'field.note': 'Note',
@@ -507,6 +519,8 @@ const dict = {
     'md.formatCustom': 'Custom (own pattern)',
     'md.parentLabel': 'Attach under (parent note)',
     'md.parentRoot': '(root — top of the board)',
+    'md.parentPickerTitle': 'Pick parent note',
+    'md.customNoteHint': 'Set which prefixes count as notes and how child levels are indented.',
     'md.customNotePrefix': 'Note paper prefix',
     'md.customDonePrefix': 'Checked note paper prefix',
     'md.customIndent': 'Indent (child level)',

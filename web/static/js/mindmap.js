@@ -6,7 +6,7 @@ import { el, toast, colorForUser, debounce, confirmDialog } from './ui.js';
 import { store, on, nodeChildren, canEdit, isDescendant, setCollapsed, upsertNode, removeNodes } from './store.js';
 import { fieldElement, openFieldEditor, pickAndUpload } from './fields.js';
 import { sendSelect } from './ws.js';
-import { pushAction, patchAction, deleteAction, createTitleAction, markCreated, consumeCreate, groupAction } from './undo.js';
+import { pushAction, patchAction, deleteAction, reparentDeleteAction, createTitleAction, markCreated, consumeCreate, groupAction } from './undo.js';
 import { t } from './i18n.js';
 
 const NOTE_W = 220;          // default note width (square side)
@@ -24,6 +24,7 @@ let editMode = false;
 let selectedId = null;
 let selectMode = false;      // multi-select toggle under edit mode
 const selection = new Set(); // selected note ids (multi-select)
+let selectSubtreeMode = false; // when on, tapping a note selects its whole subtree (mobile shift+click substitute)
 let destroyed = true;
 let edgePaths = new Map(); // edgeKey -> {g, path1, path2, grad}
 
@@ -132,7 +133,7 @@ function buildNote(node) {
   n.addEventListener('pointerdown', e => onNotePointerDown(e, node, n));
   n.addEventListener('click', e => {
     if (selectMode && canEdit()) {
-      toggleSelect(node, e.shiftKey);
+      toggleSelect(node, e.shiftKey || selectSubtreeMode);
       return;
     }
     if (selectedId !== node.id) {
@@ -699,7 +700,7 @@ function select(id) {
 
 export function toggleSelectMode() {
   selectMode = !selectMode;
-  if (!selectMode) clearSelection();
+  if (!selectMode) { selectSubtreeMode = false; clearSelection(); }
   viewport?.classList.toggle('selecting', selectMode);
   emitToolbar();
   renderSelections();
@@ -742,6 +743,10 @@ function renderSelectionBar() {
   clear(bar);
   bar.append(
     el('span.select-count', null, t('app.selectedCount', { n: selection.size })),
+    el('button.btn.small' + (selectSubtreeMode ? ' active' : ''), {
+      onclick: e => { selectSubtreeMode = !selectSubtreeMode; renderSelectionBar(); },
+      title: t('app.selectSubtreeHint'),
+    }, t('app.selectSubtree')),
     el('button.btn.small', { onclick: e => bulkColor(e.currentTarget) }, t('app.bulkColor')),
     el('button.btn.small', { onclick: e => bulkResize(e.currentTarget) }, t('app.bulkResize')),
     el('button.btn.small.ghost', { onclick: () => clearSelection() }, t('app.clearSelection')),
@@ -774,47 +779,76 @@ function bulkColor(anchor) {
   );
 }
 
+/** Measure a note's true content height (independent of its min-height) so a
+ *  shrink request never clips content — it clamps back up to the content. */
+function measureContentH(el) {
+  const prevMin = el.style.minHeight;
+  el.style.minHeight = '0px';
+  const h = Math.max(MIN_H, el.scrollHeight);
+  el.style.minHeight = prevMin;
+  return h;
+}
+
 function bulkResize(anchor) {
   const nodes = [...selection].map(id => store.nodes.get(id)).filter(Boolean);
   if (!nodes.length) return;
   const first = nodes[0];
+  const firstEl = notesLayer.querySelector(`.note[data-id="${first.id}"]`);
   const { pop, close } = openPop(anchor);
-  const wInput = el('input.input.small', { type: 'number', min: MIN_W, max: MAX_W, value: first.w || NOTE_W, title: t('app.resizeWidth') });
-  const hInput = el('input.input.small', { type: 'number', min: MIN_H, max: MAX_H, value: first.h || '', placeholder: t('app.resizeAuto'), title: t('app.resizeHeight') });
-  const num = s => { const v = parseInt(s, 10); return Number.isFinite(v) ? v : null; };
+
+  const stepW = 20, stepH = 16;
+  let targetW = first.w || NOTE_W;
+  let targetH = first.h || (firstEl ? measureContentH(firstEl) : MIN_H);
+
+  const wVal = el('span.size-val', null, `${targetW}px`);
+  const hVal = el('span.size-val', null, `${targetH}px`);
+  const renderVals = () => {
+    wVal.textContent = `${targetW}px`;
+    hVal.textContent = `${targetH}px`;
+  };
+
+  const stepper = (label, val, minus, plus) => el('div.stepper-row', null,
+    el('span.pat-label', null, label),
+    el('button.stepper-btn', { title: t('app.resizeShrink'), onclick: minus }, '−'),
+    val,
+    el('button.stepper-btn', { title: t('app.resizeGrow'), onclick: plus }, '+'),
+  );
+
   const apply = async () => {
-    const wRaw = num(wInput.value);
-    const hRaw = num(hInput.value);
-    if (wRaw == null && hRaw == null) return;
-    const w = wRaw == null ? null : Math.max(MIN_W, Math.min(MAX_W, wRaw));
-    const h = hRaw == null ? null : Math.max(MIN_H, Math.min(MAX_H, hRaw));
     const steps = [];
+    const payloads = [];
     for (const n of nodes) {
+      const el = notesLayer.querySelector(`.note[data-id="${n.id}"]`);
+      const contentH = el ? measureContentH(el) : MIN_H;
+      // two axes sized independently; height is content-aware (never clips)
+      const w = clamp(targetW, MIN_W, MAX_W);
+      const h = clamp(targetH, contentH, MAX_H);
       const before = { w: n.w || NOTE_W, h: n.h || 0 };
-      const after = { w: w ?? (n.w || NOTE_W), h: h ?? (n.h || 0) };
+      const after = { w, h };
       if (before.w === after.w && before.h === after.h) continue;
       steps.push(patchAction(n.id, before, after));
+      payloads.push({ id: n.id, w, h });
     }
-    if (steps.length) pushAction(groupAction(steps));
+    if (!steps.length) { close(); return; }
+    pushAction(groupAction(steps));
     try {
-      for (const n of nodes) {
-        const body = {};
-        if (w != null) body.w = w;
-        if (h != null) body.h = h;
-        mergeNode(await api.patch(`/api/nodes/${n.id}`, body));
+      for (const p of payloads) {
+        const body = { w: p.w };
+        if (p.h) body.h = p.h;
+        mergeNode(await api.patch(`/api/nodes/${p.id}`, body));
       }
       close();
     } catch (e) { toast(e.message, 'error'); }
   };
-  wInput.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
-  hInput.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+
   pop.append(
     el('div.pop-title', null, t('app.bulkResize')),
-    el('div.field-row', null,
-      el('span.field-icon', null, '↔'),
-      el('span.pat-label', null, t('app.resizeWidth')), wInput,
-      el('span.pat-label', null, t('app.resizeHeight')), hInput,
-    ),
+    stepper(t('app.resizeWidth'), wVal,
+      () => { targetW = clamp(targetW - stepW, MIN_W, MAX_W); renderVals(); },
+      () => { targetW = clamp(targetW + stepW, MIN_W, MAX_W); renderVals(); }),
+    stepper(t('app.resizeHeight'), hVal,
+      () => { targetH = clamp(targetH - stepH, MIN_H, MAX_H); renderVals(); },
+      () => { targetH = clamp(targetH + stepH, MIN_H, MAX_H); renderVals(); }),
     el('div.field-add', null,
       el('button.btn.small.primary', { onclick: apply }, t('app.resizeApply')),
     ),
@@ -825,26 +859,27 @@ async function bulkDelete() {
   const nodes = [...selection].map(id => store.nodes.get(id)).filter(Boolean);
   if (!nodes.length) return;
   // only top-level selected nodes are deleted (descendants go with their parent)
-  const topIds = nodes
-    .filter(n => {
-      let cur = n;
-      while (cur && cur.parentId != null) {
-        if (selection.has(cur.parentId)) return false;
-        cur = store.nodes.get(cur.parentId);
-      }
-      return true;
-    })
-    .map(n => n.id);
+  const topNodes = nodes.filter(n => {
+    let cur = n;
+    while (cur && cur.parentId != null) {
+      if (selection.has(cur.parentId)) return false;
+      cur = store.nodes.get(cur.parentId);
+    }
+    return true;
+  });
+  const topIds = topNodes.map(n => n.id);
   let childrenCount = 0;
   const walk = pid => { for (const c of nodeChildren(pid)) { childrenCount++; walk(c.id); } };
   for (const id of topIds) walk(id);
+  const total = topIds.length + childrenCount;
   const ok = await confirmDialog({
-    title: t('app.bulkDeleteTitle'),
-    body: t('app.bulkDeleteBody', { n: topIds.length + childrenCount }),
+    title: t('app.bulkDeleteTitle', { n: total }),
+    body: t('app.bulkDeleteBody', { n: total }),
     confirmText: t('app.bulkDeleteConfirm'),
     danger: true,
   });
   if (!ok) return;
+  pushAction(groupAction(topNodes.map(n => deleteAction(n))));
   try {
     for (const id of topIds) {
       const kids = nodeChildren(id);
@@ -871,6 +906,11 @@ function renderSelections() {
   });
   for (const id of selection) {
     notesLayer?.querySelector(`.note[data-id="${id}"]`)?.classList.add('selected');
+  }
+  // the single-clicked note (not part of a multi-selection) gets the frame too,
+  // so "what is selected right now" is always visibly highlighted
+  if (selectedId != null && !selection.has(selectedId)) {
+    notesLayer?.querySelector(`.note[data-id="${selectedId}"]`)?.classList.add('selected');
   }
   for (const [uid, nodeId] of store.selections) {
     const u = store.presence.get(uid);
@@ -958,14 +998,16 @@ function deleteNoteDialog(node) {
     close();
     try {
       if (mode === 'subtree') {
-        if (!kids.length) pushAction(deleteAction(node)); // leaf delete is reversible
+        pushAction(deleteAction(node)); // subtree/leaf delete is reversible via restore
         await api.del(`/api/nodes/${node.id}${kids.length ? '?withChildren=1' : ''}`);
         const doomed = [node.id];
         const walk = pid => { for (const c of nodeChildren(pid)) { doomed.push(c.id); walk(c.id); } };
         walk(node.id);
         removeNodes(doomed); // emits → mindmap + list view both update
       } else {
+        // delete the note but keep its children: reparent them away, then soft-delete
         const targetParent = mode === 'root' ? 0 : (node.parentId ?? 0);
+        pushAction(reparentDeleteAction(node.id, kids.map(k => k.id), targetParent));
         for (const k of kids) {
           const upd = await api.patch(`/api/nodes/${k.id}`, { parentId: targetParent });
           upsertNode(upd);

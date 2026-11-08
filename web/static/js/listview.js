@@ -9,6 +9,7 @@ import { t } from './i18n.js';
 let rootEl = null;
 let editingId = null;   // node being inline-renamed
 let editingIsNew = false;
+const expandedFields = new Set(); // node ids whose fields are expanded (client-side per-user only)
 
 export function initListView(container) {
   rootEl = container;
@@ -20,6 +21,7 @@ export function initListView(container) {
 
 function render() {
   if (!rootEl) return;
+  const scrollTop = rootEl.scrollTop;
   clear(rootEl);
 
   if (!store.nodes.size) {
@@ -41,6 +43,7 @@ function render() {
       }, el('span.plus', null, '+'), t('list.addTask')),
     );
   }
+  rootEl.scrollTop = scrollTop;
 }
 
 function emptyState() {
@@ -57,6 +60,8 @@ function clear(node) { while (node.firstChild) node.removeChild(node.firstChild)
 function renderNode(node, depth) {
   const kids = nodeChildren(node.id);
   const collapsed = isCollapsed(node.id);
+  const hasFields = !!(node.fields && node.fields.length);
+  const fieldsExpanded = expandedFields.has(node.id);
   const row = el('div.tree-row', {
     dataset: { id: node.id, depth },
     style: `--depth:${depth}`,
@@ -81,30 +86,35 @@ function renderNode(node, depth) {
   const title = editingId === node.id
     ? titleEditor(node)
     : el('span.tree-title', {
-        onclick: () => { selectNode(node.id); },
+        onclick: () => { selectNode(node.id); if (hasFields) toggleFields(node.id); },
         ondblclick: () => { if (canEdit()) startEdit(node.id); },
       }, node.title || (el('span.dim', null, t('list.untitled'))));
 
-  const grip = canEdit()
-    ? el('span.drag-grip', { title: t('list.dragToMove'), dataset: { grip: '1' } }, '⠿')
-    : null;
-
-  // title + fields (note/image/date/time/link) live in one vertical body:
-  // long titles wrap instead of ellipsizing, fields sit on a second line.
+  // title + fields live in one vertical body; fields are collapsed by default
+  // (title-only) and expand downward on click — a per-user, client-side toggle.
   const body = el('span.tree-body', null,
     title,
-    el('span.tree-fields', null, fieldChips(node)),
+    fieldsExpanded && hasFields && el('span.tree-fields', null, fieldChips(node)),
   );
 
-  row.append(...[grip, chevron, checkToggle(node), body].filter(Boolean));
+  row.append(chevron, checkToggle(node), body);
   if (canEdit()) wireDrag(row, node);
 
-  // one ⋯ menu replaces the row of side icons (add field, rename, add child, …)
-  row.append(el('span.row-actions', null,
+  // far-right cluster: field indicator (always visible when fields exist),
+  // then the ⋯ menu and the drag grip (both revealed on hover).
+  const fieldIcon = hasFields
+    ? el('button.field-toggle' + (fieldsExpanded ? '.open' : ''), {
+        title: fieldsExpanded ? t('list.collapseFields') : t('list.expandFields'),
+        onclick: e => { e.stopPropagation(); toggleFields(node.id); },
+      }, '≡')
+    : null;
+  row.append(el('span.row-tail', null,
+    fieldIcon,
     el('button.icon-btn', {
       title: t('list.menu'),
       onclick: e => { e.stopPropagation(); rowMenu(node, e.currentTarget); },
     }, '⋯'),
+    canEdit() && el('span.drag-grip', { title: t('list.dragToMove'), dataset: { grip: '1' } }, '⠿'),
   ));
 
   const frag = document.createDocumentFragment();
@@ -115,6 +125,12 @@ function renderNode(node, depth) {
     frag.append(kidBox);
   }
   return frag;
+}
+
+function toggleFields(id) {
+  if (expandedFields.has(id)) expandedFields.delete(id);
+  else expandedFields.add(id);
+  render();
 }
 
 function checkToggle(node) {
@@ -267,6 +283,7 @@ async function deleteNode(node) {
       danger: true,
     });
     if (!ok) return;
+    pushAction(deleteAction(node)); // subtree delete is reversible via restore
     await api.del(`/api/nodes/${node.id}?withChildren=1`);
   } else {
     const ok = await confirmDialog({

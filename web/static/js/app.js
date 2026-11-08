@@ -343,7 +343,7 @@ function boardMenu(anchor) {
     } }, '✎  ' + t('app.renameBoard')),
     el('button.menu-item', { onclick: () => { close(); openShareDialog(); } }, t('app.share')),
     el('button.menu-item', { onclick: () => { close(); exportMarkdown(); } }, t('app.exportMd')),
-    el('button.menu-item', { onclick: () => { close(); importMarkdown(); } }, t('app.importMd')),
+    el('button.menu-item', { onclick: () => { close(); importMarkdown(); } }, t('app.import')),
     el('button.menu-item', { onclick: async () => {
       close();
       if (owner) {
@@ -469,19 +469,16 @@ const CUSTOM_DEFAULTS = {
   },
 };
 
-function customFieldInputs() {
-  const inp = (v, ph) => el('input.input.small', { value: v, placeholder: ph ?? '' });
+function patternInput(v) {
+  return el('input.input.small.pattern-input', { value: v, spellcheck: false, autocapitalize: 'off' });
+}
+
+/** Note-level custom pattern inputs (shown directly in custom mode). */
+function customNoteInputs() {
   const cfg = {
-    notePrefix: inp(CUSTOM_DEFAULTS.notePrefix),
-    donePrefix: inp(CUSTOM_DEFAULTS.donePrefix),
-    indent: inp(CUSTOM_DEFAULTS.indent),
-    fields: {
-      text: { prefix: inp(CUSTOM_DEFAULTS.fields.text.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.text.suffix) },
-      date: { prefix: inp(CUSTOM_DEFAULTS.fields.date.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.date.suffix) },
-      time: { prefix: inp(CUSTOM_DEFAULTS.fields.time.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.time.suffix) },
-      datetime: { prefix: inp(CUSTOM_DEFAULTS.fields.datetime.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.datetime.suffix) },
-      link: { prefix: inp(CUSTOM_DEFAULTS.fields.link.prefix), suffix: inp(CUSTOM_DEFAULTS.fields.link.suffix) },
-    },
+    notePrefix: patternInput(CUSTOM_DEFAULTS.notePrefix),
+    donePrefix: patternInput(CUSTOM_DEFAULTS.donePrefix),
+    indent: patternInput(CUSTOM_DEFAULTS.indent),
   };
   const row = (label, pfx, sfx) => [el('span.pat-label', null, label), pfx, sfx ?? el('span')];
   const grid = el('div.pattern-grid', null,
@@ -489,6 +486,23 @@ function customFieldInputs() {
     ...row(t('md.customNotePrefix'), cfg.notePrefix),
     ...row(t('md.customDonePrefix'), cfg.donePrefix),
     ...row(t('md.customIndent'), cfg.indent),
+  );
+  return { grid, cfg };
+}
+
+/** Field-level custom pattern inputs (shown inside the "advanced" section). */
+function customFieldInputs() {
+  const p = v => ({ prefix: patternInput(v.prefix), suffix: patternInput(v.suffix) });
+  const cfg = {
+    fields: {
+      text: p(CUSTOM_DEFAULTS.fields.text), date: p(CUSTOM_DEFAULTS.fields.date),
+      time: p(CUSTOM_DEFAULTS.fields.time), datetime: p(CUSTOM_DEFAULTS.fields.datetime),
+      link: p(CUSTOM_DEFAULTS.fields.link),
+    },
+  };
+  const row = (label, pfx, sfx) => [el('span.pat-label', null, label), pfx, sfx ?? el('span')];
+  const grid = el('div.pattern-grid', null,
+    el('span'), el('span.pat-head', null, t('md.prefix')), el('span.pat-head', null, t('md.suffix')),
     ...row(t('md.fieldNote'), cfg.fields.text.prefix, cfg.fields.text.suffix),
     ...row(t('md.fieldDate'), cfg.fields.date.prefix, cfg.fields.date.suffix),
     ...row(t('md.fieldTime'), cfg.fields.time.prefix, cfg.fields.time.suffix),
@@ -498,15 +512,15 @@ function customFieldInputs() {
   return { grid, cfg };
 }
 
-function customConfig(cfg) {
+function customConfig(noteCfg, fieldCfg) {
   const read = p => ({ prefix: p.prefix.value, suffix: p.suffix.value });
   return {
-    notePrefix: cfg.notePrefix.value,
-    donePrefix: cfg.donePrefix.value,
-    indent: cfg.indent.value,
+    notePrefix: noteCfg.notePrefix.value,
+    donePrefix: noteCfg.donePrefix.value,
+    indent: noteCfg.indent.value,
     fields: {
-      text: read(cfg.fields.text), date: read(cfg.fields.date), time: read(cfg.fields.time),
-      datetime: read(cfg.fields.datetime), link: read(cfg.fields.link),
+      text: read(fieldCfg.fields.text), date: read(fieldCfg.fields.date), time: read(fieldCfg.fields.time),
+      datetime: read(fieldCfg.fields.datetime), link: read(fieldCfg.fields.link),
     },
   };
 }
@@ -574,17 +588,51 @@ function parseCustom(text, cfg) {
   return roots;
 }
 
-/** Existing board nodes as an indented <select> option list (root first). */
-function parentOptions() {
-  const opts = [el('option', { value: '' }, t('md.parentRoot'))];
-  const walk = (list, depth) => {
-    for (const n of list) {
-      opts.push(el('option', { value: n.id }, '· '.repeat(depth) + (noteMainText(n) || t('list.untitled'))));
-      walk(nodeChildren(n.id), depth + 1);
-    }
+/** In-page modal tree for picking an import parent — minimalist, titles only,
+ *  collapsed by default, expand via the side arrows. */
+function openParentPicker(onChoose) {
+  const collapsed = new Set(
+    [...store.nodes.values()].filter(n => nodeChildren(n.id).length).map(n => n.id),
+  );
+  const list = el('div.parent-tree');
+  const overlay = el('div.modal-overlay', { onclick: e => { if (e.target === overlay) overlay.remove(); } });
+  const close = () => overlay.remove();
+
+  const render = () => {
+    clear(list);
+    list.append(el('button.tree-item', {
+      onclick: () => { onChoose(null); close(); },
+    }, el('span.tree-arrow.spacer'), el('span.tree-title.root', null, t('md.parentRoot'))));
+    const walk = (nodes, depth) => {
+      for (const n of nodes) {
+        const kids = nodeChildren(n.id);
+        const isCollapsed = collapsed.has(n.id);
+        const arrow = kids.length
+          ? el('span.tree-arrow', {
+              onclick: e => {
+                e.stopPropagation();
+                if (collapsed.has(n.id)) collapsed.delete(n.id); else collapsed.add(n.id);
+                render();
+              },
+            }, isCollapsed ? '▸' : '▾')
+          : el('span.tree-arrow.spacer');
+        list.append(el('button.tree-item', {
+          style: `--d:${depth}`,
+          onclick: () => { onChoose(n.id); close(); },
+        }, arrow, el('span.tree-title', null, noteMainText(n) || t('list.untitled'))));
+        if (!isCollapsed) walk(kids, depth + 1);
+      }
+    };
+    walk(nodeChildren(null), 0);
   };
-  walk(nodeChildren(null), 0);
-  return opts;
+  render();
+
+  overlay.append(el('div.modal.parent-modal',
+    el('h3.modal-title', null, t('md.parentPickerTitle')),
+    list,
+    el('div.modal-actions', el('button.btn.ghost', { onclick: close }, t('common.cancel'))),
+  ));
+  document.body.append(overlay);
 }
 
 /** A free area to the right of the existing content — imports land there. */
@@ -629,13 +677,22 @@ function importMarkdown() {
 
   const formatMd = el('button.btn.small', { onclick: () => setFormat('md') }, t('md.formatMarkdown'));
   const formatCustom = el('button.btn.small', { onclick: () => setFormat('custom') }, t('md.formatCustom'));
-  const parentSel = el('select.input.import-parent', null, parentOptions());
-  const pat = customFieldInputs();
+
+  // parent is picked from an in-page modal tree, not a dropdown
+  let parentId = null;
+  const parentLabel = id => id == null ? t('md.parentRoot') : (noteMainText(store.nodes.get(id)) || t('list.untitled'));
+  const parentBtn = el('button.import-parent', {
+    onclick: () => openParentPicker(id => { parentId = id; parentBtn.textContent = parentLabel(id); }),
+  }, parentLabel(null));
+
+  const notePat = customNoteInputs();
+  const fieldPat = customFieldInputs();
+  const noteWrap = el('div.import-note-patterns', null, el('div.dim', null, t('md.customNoteHint')), notePat.grid);
   const advanced = el('details.import-advanced', null,
     el('summary', null, t('md.advanced')),
     el('div.import-advanced-body', null,
       el('div.dim', null, t('md.customHint')),
-      pat.grid,
+      fieldPat.grid,
     ),
   );
 
@@ -649,7 +706,8 @@ function importMarkdown() {
           formatCustom,
         ),
         el('label.modal-label', null, t('md.parentLabel')),
-        parentSel,
+        parentBtn,
+        noteWrap,
         advanced,
       ),
       el('div.md-body',
@@ -682,14 +740,15 @@ function importMarkdown() {
     format = f;
     formatMd.classList.toggle('active', f === 'md');
     formatCustom.classList.toggle('active', f === 'custom');
-    advanced.open = f === 'custom';
+    noteWrap.hidden = f !== 'custom';
+    advanced.hidden = f !== 'custom';
     update();
   }
 
   function setText(text) { ta.value = text; update(); }
 
   function update() {
-    current = format === 'custom' ? parseCustom(ta.value, customConfig(pat.cfg)) : parseMarkdown(ta.value);
+    current = format === 'custom' ? parseCustom(ta.value, customConfig(notePat.cfg, fieldPat.cfg)) : parseMarkdown(ta.value);
     clear(preview);
     if (!current.length) {
       preview.append(el('div.dim', null, ta.value.trim() ? t('md.nothing') : t('md.previewHint')));
@@ -704,12 +763,14 @@ function importMarkdown() {
   }
 
   ta.addEventListener('input', update);
+  // re-parse live when any custom pattern box changes (fixes: editing a prefix
+  // without touching the text area used to leave preview/import stale)
+  overlay.querySelectorAll('.pattern-grid input').forEach(inp => inp.addEventListener('input', update));
   setFormat('md');
 
   async function doImport() {
     if (!current.length) return;
     importBtn.disabled = true;
-    const parentId = parentSel.value === '' ? null : Number(parentSel.value);
     const origin = freeOrigin();
     const laid = radialLayout(current, origin.x, origin.y);
     const idByNode = new Map();
@@ -1017,10 +1078,7 @@ function presenceDropdown() {
       el('button.menu-item.presence-user', {
         onclick: () => { close(); showAvatarLarge(u, { editable: false }); },
       }, avatar({ userId: u.userId, username: u.username }, 'md'),
-        el('span.profile-id', null,
-          el('span.profile-name', null, u.username),
-          el('span.profile-sub', null, u.online ? t('app.online') : ''),
-        ),
+        el('span.presence-username', null, u.username),
       ),
     ),
   );

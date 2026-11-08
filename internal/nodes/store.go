@@ -52,7 +52,7 @@ func (s *Store) Node(nodeID int64) (*Node, error) {
 	var hue sql.NullInt64
 	var done int64
 	err := s.DB.QueryRow(`SELECT id, board_id, parent_id, title, position, x, y, w, h, hue, done, created_at, updated_at
-		FROM nodes WHERE id = ?`, nodeID).
+		FROM nodes WHERE id = ? AND deleted = 0`, nodeID).
 		Scan(&n.ID, &n.BoardID, &parent, &n.Title, &n.Position, &n.X, &n.Y, &n.W, &n.H, &hue, &done, &n.CreatedAt, &n.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -93,7 +93,7 @@ func (s *Store) Node(nodeID int64) (*Node, error) {
 // with each node's fields attached.
 func (s *Store) ListByBoard(boardID int64) ([]Node, error) {
 	rows, err := s.DB.Query(`SELECT id, board_id, parent_id, title, position, x, y, w, h, hue, done, created_at, updated_at
-		FROM nodes WHERE board_id = ? ORDER BY position, id`, boardID)
+		FROM nodes WHERE board_id = ? AND deleted = 0 ORDER BY position, id`, boardID)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (s *Store) ListByBoard(boardID int64) ([]Node, error) {
 
 	frows, err := s.DB.Query(`SELECT f.id, f.node_id, f.type, f.value, f.position
 		FROM node_fields f JOIN nodes n ON n.id = f.node_id
-		WHERE n.board_id = ? ORDER BY f.node_id, f.position, f.id`, boardID)
+		WHERE n.board_id = ? AND n.deleted = 0 ORDER BY f.node_id, f.position, f.id`, boardID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,10 +173,10 @@ func (s *Store) nextSiblingPosition(boardID int64, parentID *int64) (float64, er
 	var q string
 	var args []any
 	if parentID == nil {
-		q = `SELECT COALESCE(MAX(position),0) FROM nodes WHERE board_id = ? AND parent_id IS NULL`
+		q = `SELECT COALESCE(MAX(position),0) FROM nodes WHERE board_id = ? AND parent_id IS NULL AND deleted = 0`
 		args = []any{boardID}
 	} else {
-		q = `SELECT COALESCE(MAX(position),0) FROM nodes WHERE parent_id = ?`
+		q = `SELECT COALESCE(MAX(position),0) FROM nodes WHERE parent_id = ? AND deleted = 0`
 		args = []any{*parentID}
 	}
 	var max float64
@@ -311,7 +311,7 @@ type Patch struct {
 // ChildCount counts direct children.
 func (s *Store) ChildCount(nodeID int64) (int, error) {
 	var n int
-	err := s.DB.QueryRow(`SELECT COUNT(*) FROM nodes WHERE parent_id = ?`, nodeID).Scan(&n)
+	err := s.DB.QueryRow(`SELECT COUNT(*) FROM nodes WHERE parent_id = ? AND deleted = 0`, nodeID).Scan(&n)
 	return n, err
 }
 
@@ -338,9 +338,17 @@ func (s *Store) SubtreeIDs(nodeID int64) ([]int64, error) {
 	return ids, rows.Err()
 }
 
-// Delete removes a node; cascade FK removes children + fields.
+// Delete soft-deletes a node and its whole subtree (rows stay for undo; the
+// restore endpoint brings them back). Returns ErrNotFound if already deleted.
 func (s *Store) Delete(nodeID int64) error {
-	res, err := s.DB.Exec(`DELETE FROM nodes WHERE id = ?`, nodeID)
+	res, err := s.DB.Exec(`
+		WITH RECURSIVE sub(id) AS (
+			SELECT id FROM nodes WHERE id = ?
+			UNION ALL
+			SELECT c.id FROM nodes c JOIN sub s ON c.parent_id = s.id
+		)
+		UPDATE nodes SET deleted = 1, updated_at = ? WHERE id IN (SELECT id FROM sub) AND deleted = 0`,
+		nodeID, time.Now().Unix())
 	if err != nil {
 		return err
 	}
@@ -348,6 +356,54 @@ func (s *Store) Delete(nodeID int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// Restore un-deletes a node and its whole (deleted) subtree, returning the ids.
+func (s *Store) Restore(nodeID int64) ([]int64, error) {
+	rows, err := s.DB.Query(`
+		WITH RECURSIVE sub(id) AS (
+			SELECT id FROM nodes WHERE id = ?
+			UNION ALL
+			SELECT c.id FROM nodes c JOIN sub s ON c.parent_id = s.id
+		) SELECT id FROM sub`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, ErrNotFound
+	}
+	if _, err := s.DB.Exec(`UPDATE nodes SET deleted = 0, updated_at = ? WHERE id IN (
+		WITH RECURSIVE sub(id) AS (
+			SELECT id FROM nodes WHERE id = ?
+			UNION ALL
+			SELECT c.id FROM nodes c JOIN sub s ON c.parent_id = s.id
+		) SELECT id FROM sub)`, time.Now().Unix(), nodeID); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// BoardOf returns the board id of a node regardless of its deleted flag — used
+// to authorize the restore endpoint for a soft-deleted node.
+func (s *Store) BoardOf(nodeID int64) (int64, error) {
+	var b int64
+	err := s.DB.QueryRow(`SELECT board_id FROM nodes WHERE id = ?`, nodeID).Scan(&b)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return b, err
 }
 
 // TouchBoard bumps the board's updated_at and returns the new timestamp.
@@ -363,7 +419,7 @@ var fieldTypes = map[string]bool{"text": true, "date": true, "time": true, "date
 
 func (s *Store) NodeBelongsToBoard(nodeID, boardID int64) (bool, error) {
 	var b int64
-	err := s.DB.QueryRow(`SELECT board_id FROM nodes WHERE id = ?`, nodeID).Scan(&b)
+	err := s.DB.QueryRow(`SELECT board_id FROM nodes WHERE id = ? AND deleted = 0`, nodeID).Scan(&b)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, ErrNotFound
 	}
