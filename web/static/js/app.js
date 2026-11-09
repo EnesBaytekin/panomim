@@ -719,22 +719,45 @@ function freeOrigin() {
   return { x: maxX + 260, y: (minY + maxY) / 2 - 120 };
 }
 
-/** Lay a tree out radially (spiral-like): roots around a ring, children fan out
- *  inside their parent's angular wedge, one ring per depth. Preserves the tree
- *  and keeps notes from piling in one straight line. Returns [{node,parent,x,y}]. */
+/** Lay a tree out radially: each depth sits on its own ring, and every ring is
+ *  sized from how many notes live on that depth, so they never pile onto each
+ *  other (a 35-root import spreads wide instead of overlapping on one tiny
+ *  circle). Roots form the inner ring; children fan out inside their parent's
+ *  angular wedge, one ring per depth. Returns [{node,parent,x,y}]. */
 function radialLayout(roots, cx, cy) {
   const out = [];
   const leafCount = n => n.children.length ? n.children.reduce((s, c) => s + leafCount(c), 0) : 1;
-  const R0 = 150, RSTEP = 170;
+
+  // Count notes per depth so each ring can be sized to its own population.
+  const depthCount = [];
+  const countDepth = (nodes, d) => {
+    depthCount[d] = (depthCount[d] || 0) + nodes.length;
+    for (const n of nodes) if (n.children.length) countDepth(n.children, d + 1);
+  };
+  countDepth(roots, 0);
+
+  // Ring radius per depth: wide enough for its node count to fit around the
+  // circumference, and always outside the previous ring so levels don't collide.
+  const W = 220;            // default note width (see NOTE_W in mindmap.js)
+  const GAP = 64;           // min breathing room between neighbouring notes
+  const RING = 300;         // min radial distance between successive rings
+  const STEP = (W + GAP) / (Math.PI * 2);
+  const radius = [];
+  for (let d = 0; d < depthCount.length; d++) {
+    const byCount = depthCount[d] * STEP;
+    const byPrev = d ? radius[d - 1] + RING : 0;
+    radius[d] = Math.max(byCount, byPrev);
+  }
+
   const place = (nodes, a0, wedge, depth, parent) => {
     const totalLeaves = nodes.reduce((s, n) => s + leafCount(n), 0) || 1;
     let a = a0;
     for (const n of nodes) {
       const w = (leafCount(n) / totalLeaves) * wedge;
       const mid = a + w / 2;
-      const r = R0 + depth * RSTEP;
+      const r = radius[depth];
       out.push({ node: n, parent, x: Math.round(cx + r * Math.cos(mid)), y: Math.round(cy + r * Math.sin(mid)) });
-      place(n.children, a, w, depth + 1, n);
+      if (n.children.length) place(n.children, a, w, depth + 1, n);
       a += w;
     }
   };
