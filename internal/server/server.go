@@ -142,14 +142,26 @@ func securityHeaders(next http.Handler) http.Handler {
 func staticHandler(devDir string) http.Handler {
 	if devDir != "" {
 		fsDisk := http.StripPrefix("/", http.FileServer(http.Dir(devDir)))
-		return spaWrap(fsDisk)
+		return spaWrap(noCache(fsDisk))
 	}
 	sub, err := fs.Sub(web.Static, "static")
 	if err != nil {
 		panic(err)
 	}
 	fileServer := http.StripPrefix("/", http.FileServer(http.FS(sub)))
-	return spaWrap(fileServer)
+	return spaWrap(noCache(fileServer))
+}
+
+// noCache forces revalidation on every embedded static asset. Without it the
+// browser applies heuristic caching (embed.FS files carry no Last-Modified /
+// ETag), so a released update can keep serving the stale JS/CSS that a client
+// cached on an earlier version — the exact "still slow on the live domain"
+// symptom. index.html already sets no-cache; this covers js/css/fonts/images.
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func spaWrap(next http.Handler) http.Handler {
