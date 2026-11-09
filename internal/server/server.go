@@ -14,6 +14,7 @@ import (
 	"panomim/internal/friends"
 	"panomim/internal/httpx"
 	"panomim/internal/nodes"
+	"panomim/internal/notifications"
 	"panomim/internal/prefs"
 	"panomim/internal/realtime"
 	"panomim/web"
@@ -21,14 +22,15 @@ import (
 
 // Deps carries the assembled services.
 type Deps struct {
-	Auth    *auth.Service
-	Boards  *boards.Handlers
-	Nodes   *nodes.Handlers
-	Friends *friends.Handlers
-	Prefs   *prefs.Store
-	WS      *realtime.Handlers
-	Hub     *realtime.Hub
-	DevDir  string // when set, serve static files from disk (dev mode)
+	Auth          *auth.Service
+	Boards        *boards.Handlers
+	Nodes         *nodes.Handlers
+	Friends       *friends.Handlers
+	Notifications *notifications.Handlers
+	Prefs         *prefs.Store
+	WS            *realtime.Handlers
+	Hub           *realtime.Hub
+	DevDir        string // when set, serve static files from disk (dev mode)
 }
 
 // Router builds the full application mux.
@@ -60,6 +62,12 @@ func Router(d Deps) http.Handler {
 	authed("DELETE /api/friends/{userID}", http.HandlerFunc(d.Friends.RemoveFriend))
 	authed("GET /api/users/search", http.HandlerFunc(d.Friends.SearchUsers))
 
+	authed("GET /api/notifications", http.HandlerFunc(d.Notifications.List))
+	authed("DELETE /api/notifications", http.HandlerFunc(d.Notifications.DeleteAll))
+	authed("DELETE /api/notifications/{id}", http.HandlerFunc(d.Notifications.Delete))
+	authed("POST /api/notifications/{id}/accept", http.HandlerFunc(d.Notifications.Accept))
+	authed("POST /api/notifications/{id}/decline", http.HandlerFunc(d.Notifications.Decline))
+
 	authed("GET /api/boards", http.HandlerFunc(d.Boards.List))
 	authed("POST /api/boards", http.HandlerFunc(d.Boards.Create))
 
@@ -68,6 +76,7 @@ func Router(d Deps) http.Handler {
 	authed("PATCH /api/boards/{boardID}", board(RoleOwner)(http.HandlerFunc(d.Boards.Rename)))
 	authed("DELETE /api/boards/{boardID}", board(RoleOwner)(http.HandlerFunc(d.Boards.Delete)))
 	authed("POST /api/boards/{boardID}/share", board(RoleOwner)(http.HandlerFunc(d.Boards.Share)))
+	authed("PATCH /api/boards/{boardID}/members/{userID}", board(RoleOwner)(http.HandlerFunc(d.Boards.SetMemberRole)))
 	authed("DELETE /api/boards/{boardID}/members/{userID}", board(RoleOwner)(http.HandlerFunc(d.Boards.Unshare)))
 
 	authed("GET /api/boards/{boardID}/nodes", board(RoleViewer)(http.HandlerFunc(d.Nodes.List)))

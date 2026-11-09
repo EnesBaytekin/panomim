@@ -6,6 +6,7 @@ import { initListView } from './listview.js';
 import * as mm from './mindmap.js';
 import { connectBoard, disconnect, resync } from './ws.js';
 import { openFriends } from './friends.js';
+import { bellButton, initNotifications } from './notifications.js';
 import { undo, redo, canUndo, canRedo, resetUndo } from './undo.js';
 import { t, toggleTheme, toggleLang, currentTheme, getLang } from './i18n.js';
 
@@ -28,6 +29,7 @@ export async function renderApp(container) {
   buildShell();
   wireStore();
   await loadBoards();
+  initNotifications();
   refreshFriendBadge();
   if (friendBadgeTimer) clearInterval(friendBadgeTimer);
   friendBadgeTimer = setInterval(refreshFriendBadge, 30000);
@@ -115,10 +117,10 @@ function buildShell() {
 
   contentEl = el('main.content',
     el('header.content-head',
-      el('button.hamburger', { onclick: toggleDrawer, 'aria-label': t('app.menu') }, '☰'),
+      el('button.hamburger', { onclick: toggleSidebar, 'aria-label': t('app.menu') }, '☰'),
       boardTitleEl,
       boardMenuBtn,
-      presenceEl,
+      el('div.content-head-right', bellButton(), presenceEl),
     ),
     tabBarEl,
     el('div.views',
@@ -1246,7 +1248,7 @@ function openShareDialog() {
           m.role === 'owner' && el('span.share-role', null, ''),
           m.role !== 'owner' && owner && el('select.input.small', {
             onchange: async e => {
-              try { await api.post(`/api/boards/${b.id}/share`, { username: m.username, role: e.target.value }); refreshMembers(); }
+              try { await api.patch(`/api/boards/${b.id}/members/${m.userId}`, { role: e.target.value }); refreshMembers(); }
               catch (err) { toast(err.message, 'error'); }
             },
           },
@@ -1280,7 +1282,7 @@ function openShareDialog() {
               userInput.value = '';
               refreshMembers();
               await loadBoards();
-              toast(t('app.memberAdded', { name: uname }), 'ok');
+              toast(t('friends.shareRequested', { board: b.name, friend: uname }), 'ok');
             } catch (err) { toast(err.message, 'error'); }
           },
         }, t('common.add')),
@@ -1297,6 +1299,11 @@ function openShareDialog() {
 
 // --- drawer (mobile) ---------------------------------------------------------------
 
+function toggleSidebar() {
+  // desktop: collapse/expand the fixed sidebar; mobile: slide-in drawer
+  if (window.matchMedia('(max-width: 900px)').matches) toggleDrawer();
+  else root.classList.toggle('nav-collapsed');
+}
 function toggleDrawer() {
   sidebarEl.classList.toggle('open');
   drawerOverlay.classList.toggle('show');
@@ -1319,4 +1326,6 @@ function wireStore() {
   on('open-board', id => openBoard(id));
   // friend requests/friends changed → refresh the sidebar badge
   on('friends-changed', () => refreshFriendBadge());
+  // a board share was accepted → the "shared with me" list changed
+  on('boards-changed', () => loadBoards(true));
 }

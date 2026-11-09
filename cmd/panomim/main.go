@@ -26,6 +26,7 @@ import (
 	"panomim/internal/db"
 	"panomim/internal/friends"
 	"panomim/internal/nodes"
+	"panomim/internal/notifications"
 	"panomim/internal/prefs"
 	"panomim/internal/realtime"
 	"panomim/internal/server"
@@ -72,10 +73,13 @@ func run() error {
 		TTL:    cfg.RefreshTTL,
 		Secure: !cfg.HTTP,
 	}
+	notifStore := &notifications.Store{DB: database, Push: hub.NotifyUser, BoardNotify: hub.Broadcast}
+	notifH := &notifications.Handlers{Store: notifStore}
 	bh := &boards.Handlers{
-		Store:    &boards.Store{DB: database},
-		Presence: hub,
-		Notify:   hub.Broadcast,
+		Store:         &boards.Store{DB: database},
+		Presence:      hub,
+		Notify:        hub.Broadcast,
+		Notifications: notifStore,
 	}
 	nodeStore := &nodes.Store{DB: database}
 	nh := &nodes.Handlers{
@@ -83,15 +87,16 @@ func run() error {
 		Boards: bh.Store,
 		Emit:   hub.Broadcast,
 	}
-	fh := &friends.Handlers{Store: &friends.Store{DB: database}}
+	fh := &friends.Handlers{Store: &friends.Store{DB: database}, Notifications: notifStore}
 	deps := server.Deps{
-		Auth:    authSvc,
-		Boards:  bh,
-		Nodes:   nh,
-		Friends: fh,
-		Prefs:   &prefs.Store{DB: database},
-		WS:      &realtime.Handlers{Hub: hub, Boards: bh.Store},
-		Hub:     hub,
+		Auth:          authSvc,
+		Boards:        bh,
+		Nodes:         nh,
+		Friends:       fh,
+		Notifications: notifH,
+		Prefs:         &prefs.Store{DB: database},
+		WS:            &realtime.Handlers{Hub: hub, Boards: bh.Store},
+		Hub:           hub,
 	}
 	if cfg.Dev {
 		server.SetDevDir(cfg.DevDir)
