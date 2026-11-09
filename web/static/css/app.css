@@ -130,6 +130,14 @@ img { max-width: 100%; }
 /* auth screen isn't part of the sidebar grid — span the full width so it centers */
 #app > .auth-page { grid-column: 1 / -1; }
 
+/* sidebar collapse/expand (desktop): hide the fixed sidebar column while the
+   hamburger in the content header stays available to bring it back */
+@media (min-width: 901px) {
+  #app { transition: grid-template-columns .2s ease; }
+  #app.nav-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+  #app.nav-collapsed .sidebar { opacity: 0; pointer-events: none; border-right: none; }
+}
+
 /* --- buttons ---------------------------------------------------------------- */
 
 .btn {
@@ -201,7 +209,7 @@ img { max-width: 100%; }
 .link:hover { text-decoration: underline; }
 
 .hamburger {
-  display: none;
+  display: inline-grid;
   border: none;
   background: transparent;
   font-size: 18px;
@@ -299,6 +307,8 @@ select.input { cursor: pointer; }
   border-right: 1px solid var(--line);
   min-height: 0;
   z-index: 90;
+  overflow: hidden;
+  transition: opacity .18s ease;
 }
 .sidebar-head {
   display: flex;

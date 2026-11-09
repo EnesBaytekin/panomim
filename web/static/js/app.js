@@ -115,7 +115,7 @@ function buildShell() {
 
   contentEl = el('main.content',
     el('header.content-head',
-      el('button.hamburger', { onclick: toggleDrawer, 'aria-label': t('app.menu') }, '☰'),
+      el('button.hamburger', { onclick: toggleSidebar, 'aria-label': t('app.menu') }, '☰'),
       boardTitleEl,
       boardMenuBtn,
       presenceEl,
@@ -1297,6 +1297,11 @@ function openShareDialog() {
 
 // --- drawer (mobile) ---------------------------------------------------------------
 
+function toggleSidebar() {
+  // desktop: collapse/expand the fixed sidebar; mobile: slide-in drawer
+  if (window.matchMedia('(max-width: 900px)').matches) toggleDrawer();
+  else root.classList.toggle('nav-collapsed');
+}
 function toggleDrawer() {
   sidebarEl.classList.toggle('open');
   drawerOverlay.classList.toggle('show');
