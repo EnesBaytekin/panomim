@@ -204,6 +204,16 @@ func (s *Store) Touch(boardID int64) error {
 	return err
 }
 
+// Name returns a board's name, or ErrNotFound if it doesn't exist.
+func (s *Store) Name(boardID int64) (string, error) {
+	var name string
+	err := s.DB.QueryRow(`SELECT name FROM boards WHERE id = ?`, boardID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return name, err
+}
+
 // --- sharing -----------------------------------------------------------------
 
 // userIDByName resolves a username (empty when missing).
@@ -216,32 +226,59 @@ func (s *Store) userIDByName(username string) (int64, error) {
 	return id, err
 }
 
-func (s *Store) Share(boardID int64, username string, role Role) (*Member, error) {
+// ShareTarget validates a share request and returns the target user id and the
+// board's name. It does NOT add the member — sharing now requires the recipient's
+// approval, so the actual membership insert happens on acceptance (see the
+// notifications package). ErrExists means the target is the owner or is already a
+// member (or already has a pending request, checked by the handler).
+func (s *Store) ShareTarget(boardID int64, username string, role Role) (targetID int64, boardName string, err error) {
 	if role != RoleEditor && role != RoleViewer {
-		return nil, errors.New("boards: role must be editor or viewer")
+		return 0, "", errors.New("boards: role must be editor or viewer")
 	}
 	uid, err := s.userIDByName(username)
 	if err != nil {
-		return nil, err
+		return 0, "", err
 	}
 	var ownerID int64
-	if err := s.DB.QueryRow(`SELECT owner_id FROM boards WHERE id = ?`, boardID).Scan(&ownerID); err != nil {
-		return nil, ErrNotFound
+	if err := s.DB.QueryRow(`SELECT owner_id, name FROM boards WHERE id = ?`, boardID).Scan(&ownerID, &boardName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, "", ErrNotFound
+		}
+		return 0, "", err
 	}
 	if uid == ownerID {
-		return nil, ErrExists // owner already has the board
+		return 0, "", ErrExists // owner already has the board
 	}
-	_, err = s.DB.Exec(`INSERT INTO board_members (board_id, user_id, role, created_at) VALUES (?,?,?,?)
-		ON CONFLICT(board_id, user_id) DO UPDATE SET role = excluded.role`,
-		boardID, uid, string(role), time.Now().Unix())
-	if err != nil {
-		return nil, err
+	var one int
+	err = s.DB.QueryRow(`SELECT 1 FROM board_members WHERE board_id = ? AND user_id = ?`, boardID, uid).Scan(&one)
+	if err == nil {
+		return 0, "", ErrExists // already a member
 	}
-	return &Member{UserID: uid, Username: username, Role: role}, nil
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, "", err
+	}
+	return uid, boardName, nil
 }
 
 func (s *Store) Unshare(boardID, userID int64) error {
 	res, err := s.DB.Exec(`DELETE FROM board_members WHERE board_id = ? AND user_id = ?`, boardID, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetMemberRole changes an existing member's role (owner-only). ErrNotFound when
+// the user is not a member of the board.
+func (s *Store) SetMemberRole(boardID, userID int64, role Role) error {
+	if role != RoleEditor && role != RoleViewer {
+		return errors.New("boards: role must be editor or viewer")
+	}
+	res, err := s.DB.Exec(`UPDATE board_members SET role = ? WHERE board_id = ? AND user_id = ?`,
+		string(role), boardID, userID)
 	if err != nil {
 		return err
 	}

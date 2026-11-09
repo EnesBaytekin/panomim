@@ -28,6 +28,7 @@ type Client struct {
 type Hub struct {
 	mu      sync.Mutex
 	rooms   map[int64]map[*Client]bool
+	users   map[int64]map[*Client]bool // userID -> the user's clients across all rooms
 	tickets map[string]ticket
 
 	// OnRoomEmpty, when set, is invoked after the last client leaves a board
@@ -43,7 +44,11 @@ type ticket struct {
 }
 
 func NewHub() *Hub {
-	h := &Hub{rooms: map[int64]map[*Client]bool{}, tickets: map[string]ticket{}}
+	h := &Hub{
+		rooms:   map[int64]map[*Client]bool{},
+		users:   map[int64]map[*Client]bool{},
+		tickets: map[string]ticket{},
+	}
 	go h.sweepTickets()
 	return h
 }
@@ -96,6 +101,10 @@ func (h *Hub) Join(c *Client) []Presence {
 		prior = append(prior, Presence{UserID: other.UserID, Username: other.Username, Color: other.Color})
 	}
 	room[c] = true
+	if h.users[c.UserID] == nil {
+		h.users[c.UserID] = map[*Client]bool{}
+	}
+	h.users[c.UserID][c] = true
 	h.mu.Unlock()
 	return prior
 }
@@ -112,6 +121,12 @@ func (h *Hub) Leave(c *Client) {
 			delete(h.rooms, c.BoardID)
 			emptied = c.BoardID
 			empty = true
+		}
+	}
+	if set := h.users[c.UserID]; set != nil {
+		delete(set, c)
+		if len(set) == 0 {
+			delete(h.users, c.UserID)
 		}
 	}
 	h.mu.Unlock()
@@ -154,6 +169,19 @@ func (h *Hub) Broadcast(boardID int64, msg map[string]any) {
 // (used so a joining client doesn't receive its own presence echo).
 func (h *Hub) BroadcastExcept(boardID int64, msg map[string]any, skip *Client) {
 	h.broadcast(boardID, msg, skip)
+}
+
+// NotifyUser sends msg to every connection belonging to one user, across all of
+// their board rooms (used to push notifications to whichever tab is open).
+func (h *Hub) NotifyUser(userID int64, msg map[string]any) {
+	h.mu.Lock()
+	clients := slices.Clone(slices.Collect(maps.Keys(h.users[userID])))
+	h.mu.Unlock()
+	for _, c := range clients {
+		if err := c.WriteJSON(msg); err != nil {
+			log.Printf("ws notify user %d: %v", userID, err)
+		}
+	}
 }
 
 func (h *Hub) broadcast(boardID int64, msg map[string]any, skip *Client) {
