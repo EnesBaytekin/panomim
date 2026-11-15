@@ -240,16 +240,31 @@ func (h *Handlers) Unshare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	boardID := IDFrom(r.Context())
+	actor := auth.UserFrom(r.Context())
+
+	// A member removing themselves is "leave" (anyone may do it); removing
+	// someone else still requires ownership (checked via the resolved role).
+	if uid == actor.ID {
+		if RoleFrom(r.Context()) == RoleOwner {
+			httpx.Err(w, 400, "sahip panodan ayrılamaz")
+			return
+		}
+	} else if RoleFrom(r.Context()) != RoleOwner {
+		httpx.Err(w, 403, "only the owner can remove members")
+		return
+	}
+
 	name, _ := h.Store.Name(boardID)
 	if err := h.Store.Unshare(boardID, uid); err != nil {
 		httpx.Err(w, 404, "member not found")
 		return
 	}
 	h.notify(r, "members_changed", map[string]any{"id": boardID})
-	if h.Notifications != nil {
-		actorID := auth.UserFrom(r.Context()).ID
+	// Owner removing someone → tell that member. A member leaving themselves
+	// needs no notification (they already did it).
+	if h.Notifications != nil && uid != actor.ID {
 		h.Notifications.Notify(notifications.Notification{
-			UserID: uid, Type: notifications.TypeBoardRemoved, ActorID: actorID,
+			UserID: uid, Type: notifications.TypeBoardRemoved, ActorID: actor.ID,
 			BoardID: boardID, BoardName: name,
 		})
 	}

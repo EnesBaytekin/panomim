@@ -82,7 +82,7 @@ func Router(d Deps) http.Handler {
 	authed("DELETE /api/boards/{boardID}", board(RoleOwner)(http.HandlerFunc(d.Boards.Delete)))
 	authed("POST /api/boards/{boardID}/share", board(RoleOwner)(http.HandlerFunc(d.Boards.Share)))
 	authed("PATCH /api/boards/{boardID}/members/{userID}", board(RoleOwner)(http.HandlerFunc(d.Boards.SetMemberRole)))
-	authed("DELETE /api/boards/{boardID}/members/{userID}", board(RoleOwner)(http.HandlerFunc(d.Boards.Unshare)))
+	authed("DELETE /api/boards/{boardID}/members/{userID}", board(RoleViewer)(http.HandlerFunc(d.Boards.Unshare)))
 
 	authed("GET /api/boards/{boardID}/nodes", board(RoleViewer)(http.HandlerFunc(d.Nodes.List)))
 	authed("POST /api/boards/{boardID}/nodes", board(RoleEditor)(http.HandlerFunc(d.Nodes.Create)))
