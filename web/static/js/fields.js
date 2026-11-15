@@ -3,6 +3,7 @@ import { api, fileURL } from './api.js';
 import { el, popover, fmtDate, debounce, toast } from './ui.js';
 import { store, upsertNode, canEdit } from './store.js';
 import { pushAction, fieldPatchAction, fieldAddAction, fieldDeleteAction } from './undo.js';
+import { linkPreviewCard } from './preview.js';
 import { t } from './i18n.js';
 
 /** img whose src resolves through the authenticated blob loader
@@ -39,9 +40,15 @@ export function fieldChips(node, opts = {}) {
     if (f.type === 'date') text = fmtDate(f.value);
     if (f.type === 'link') text = safeHost(f.value) || f.value;
     if (f.type === 'datetime') text = f.value.replace('T', ' ');
-    return f.type === 'link'
-      ? el('a.field-chip', { href: f.value, target: '_blank', rel: 'noopener noreferrer', title: f.value }, iconOf(f.type), ' ', text)
-      : el('span.field-chip', { title: f.value }, iconOf(f.type), ' ', text);
+    if (f.type === 'link') {
+      // chip + (async) WhatsApp-style preview card underneath
+      const wrap = el('div.field-link-wrap', null,
+        el('a.field-chip', { href: f.value, target: '_blank', rel: 'noopener noreferrer', title: f.value }, iconOf(f.type), ' ', text),
+      );
+      linkPreviewCard(f).then(card => { if (card) wrap.append(card); });
+      return wrap;
+    }
+    return el('span.field-chip', { title: f.value }, iconOf(f.type), ' ', text);
   });
 }
 
@@ -62,9 +69,14 @@ export function fieldElement(f) {
   if (f.type === 'date') text = fmtDate(f.value);
   if (f.type === 'link') text = safeHost(f.value) || f.value;
   if (f.type === 'datetime') text = f.value.replace('T', ' ');
-  return f.type === 'link'
-    ? el('a.field-chip', { href: f.value, target: '_blank', rel: 'noopener noreferrer', title: f.value }, iconOf(f.type), ' ', text)
-    : el('span.field-chip', { title: f.value }, iconOf(f.type), ' ', text);
+  if (f.type === 'link') {
+    const wrap = el('div.field-link-wrap', null,
+      el('a.field-chip', { href: f.value, target: '_blank', rel: 'noopener noreferrer', title: f.value }, iconOf(f.type), ' ', text),
+    );
+    linkPreviewCard(f).then(card => { if (card) wrap.append(card); });
+    return wrap;
+  }
+  return el('span.field-chip', { title: f.value }, iconOf(f.type), ' ', text);
 }
 
 /** Open the edit popover for a node. */

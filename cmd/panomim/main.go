@@ -28,6 +28,7 @@ import (
 	"panomim/internal/nodes"
 	"panomim/internal/notifications"
 	"panomim/internal/prefs"
+	"panomim/internal/preview"
 	"panomim/internal/realtime"
 	"panomim/internal/server"
 )
@@ -95,6 +96,7 @@ func run() error {
 		Friends:       fh,
 		Notifications: notifH,
 		Prefs:         &prefs.Store{DB: database},
+		Preview:       &preview.Handlers{},
 		WS:            &realtime.Handlers{Hub: hub, Boards: bh.Store},
 		Hub:           hub,
 	}

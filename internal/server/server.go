@@ -16,6 +16,7 @@ import (
 	"panomim/internal/nodes"
 	"panomim/internal/notifications"
 	"panomim/internal/prefs"
+	"panomim/internal/preview"
 	"panomim/internal/realtime"
 	"panomim/web"
 )
@@ -28,6 +29,7 @@ type Deps struct {
 	Friends       *friends.Handlers
 	Notifications *notifications.Handlers
 	Prefs         *prefs.Store
+	Preview       *preview.Handlers
 	WS            *realtime.Handlers
 	Hub           *realtime.Hub
 	DevDir        string // when set, serve static files from disk (dev mode)
@@ -67,6 +69,9 @@ func Router(d Deps) http.Handler {
 	authed("DELETE /api/notifications/{id}", http.HandlerFunc(d.Notifications.Delete))
 	authed("POST /api/notifications/{id}/accept", http.HandlerFunc(d.Notifications.Accept))
 	authed("POST /api/notifications/{id}/decline", http.HandlerFunc(d.Notifications.Decline))
+
+	authed("GET /api/preview/meta", http.HandlerFunc(d.Preview.Meta))
+	authed("GET /api/preview/image", http.HandlerFunc(d.Preview.Image))
 
 	authed("GET /api/boards", http.HandlerFunc(d.Boards.List))
 	authed("POST /api/boards", http.HandlerFunc(d.Boards.Create))

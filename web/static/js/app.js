@@ -308,16 +308,40 @@ function renderBoardList() {
 }
 
 function boardItem(b, currentId) {
+  const isMine = b.role === 'owner';
   const item = el('button.board-item' + (b.id === currentId ? '.active' : ''), {
     onclick: () => { openBoard(b.id); closeDrawer(); },
-    title: b.name + (b.role !== 'owner' ? ` (${t('app.sharedBy', { name: b.ownerName })})` : ''),
+    title: b.name + (!isMine ? ` (${t('app.sharedBy', { name: b.ownerName })})` : ''),
   },
-    el('span.board-name', null, b.name),
+    el('span.board-main',
+      el('span.board-name', null, b.name),
+      !isMine && boardMemberLine(b),
+    ),
     boardChanged(b, currentId) && el('span.board-changed', { title: t('app.boardChanged') }),
-    b.role === 'owner' && b.sharedCount > 0 && el('span.share-badge', { title: t('app.sharedWithCount', { n: b.sharedCount }) }, '👥' + b.sharedCount),
-    b.role !== 'owner' && el('span.share-badge', { title: t('app.yourRole', { role: roleName(b.role) }) }, b.role === 'editor' ? '✎' : '👁'),
+    isMine && b.sharedCount > 0 && el('span.share-badge', { title: t('app.sharedWithCount', { n: b.sharedCount }) }, '👥' + b.sharedCount),
+    !isMine && el('span.share-badge', { title: t('app.yourRole', { role: roleName(b.role) }) }, b.role === 'editor' ? '✎' : '👁'),
   );
   return item;
+}
+
+/** For a shared board, show who shared it (owner) and who else is on it. */
+function boardMemberLine(b) {
+  const members = b.members || [];
+  const owner = members.find(m => m.role === 'owner') ||
+    (b.ownerName ? { userId: b.ownerId, username: b.ownerName, role: 'owner' } : null);
+  const others = members.filter(m => m.role !== 'owner' && m.userId !== store.user?.id);
+  const line = el('span.board-members',
+    owner && el('span.member-chip', null,
+      avatar({ userId: owner.userId, username: owner.username }, 'sm'),
+      el('span.member-name', null, owner.username),
+      el('span.member-role-dot', { title: t('common.role.owner') }, '👑'),
+    ),
+    others.map(m => el('span.member-chip', { title: m.username + ' · ' + roleName(m.role) },
+      avatar({ userId: m.userId, username: m.username }, 'sm'),
+      el('span.member-name', null, m.username),
+    )),
+  );
+  return line;
 }
 
 async function newBoard() {

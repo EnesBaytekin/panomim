@@ -17,21 +17,22 @@ const (
 )
 
 type Board struct {
-	ID          int64  `json:"id"`
-	OwnerID     int64  `json:"ownerId"`
-	OwnerName   string `json:"ownerName,omitempty"`
-	Name        string `json:"name"`
-	Role        Role   `json:"role"` // caller's effective role
-	SharedCount int    `json:"sharedCount"`
-	CreatedAt   int64  `json:"createdAt"`
-	UpdatedAt   int64  `json:"updatedAt"`
+	ID          int64    `json:"id"`
+	OwnerID     int64    `json:"ownerId"`
+	OwnerName   string   `json:"ownerName,omitempty"`
+	Name        string   `json:"name"`
+	Role        Role     `json:"role"` // caller's effective role
+	SharedCount int      `json:"sharedCount"`
+	Members     []Member `json:"members,omitempty"` // owner first; set on List
+	CreatedAt   int64    `json:"createdAt"`
+	UpdatedAt   int64    `json:"updatedAt"`
 }
 
 type Member struct {
 	UserID   int64  `json:"userId"`
 	Username string `json:"username"`
 	Role     Role   `json:"role"`
-	Online   bool   `json:"online"`
+	Online   bool   `json:"online,omitempty"`
 }
 
 var (
@@ -86,7 +87,19 @@ func (s *Store) List(userID int64) ([]Board, error) {
 		b.Role = Role(role)
 		out = append(out, b)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// attach each board's members (owner first) so the sidebar can show who is on
+	// the board and, for shared boards, who shared it / who else is a member.
+	for i := range out {
+		members, err := s.Members(out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Members = members
+	}
+	return out, nil
 }
 
 // Get fetches one board including members. roleOf gives the caller's role;
