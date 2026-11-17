@@ -66,62 +66,64 @@ func (s *Store) userIDByName(username string) (int64, error) {
 
 // SendRequest sends a friend request to username. If the other party already
 // sent one to us, the two are made friends immediately (autoAccept = true).
-func (s *Store) SendRequest(fromID int64, username string) (autoAccept bool, err error) {
+// It returns the target user id so callers can notify them.
+func (s *Store) SendRequest(fromID int64, username string) (targetID int64, autoAccept bool, err error) {
 	toID, err := s.userIDByName(username)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	if toID == fromID {
-		return false, ErrSelf
+		return 0, false, ErrSelf
 	}
 
 	if ok, err := s.areFriends(fromID, toID); err != nil {
-		return false, err
+		return 0, false, err
 	} else if ok {
-		return false, ErrAlready
+		return 0, false, ErrAlready
 	}
 
 	// Outgoing request already pending?
 	var one int
 	err = s.DB.QueryRow(`SELECT 1 FROM friend_requests WHERE from_user_id = ? AND to_user_id = ?`, fromID, toID).Scan(&one)
 	if err == nil {
-		return false, ErrPending
+		return 0, false, ErrPending
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return false, err
+		return 0, false, err
 	}
 
 	// They already asked us → accept that instead of creating a duplicate.
 	err = s.DB.QueryRow(`SELECT 1 FROM friend_requests WHERE from_user_id = ? AND to_user_id = ?`, toID, fromID).Scan(&one)
 	if err == nil {
-		return true, s.makeFriends(fromID, toID)
+		return toID, true, s.makeFriends(fromID, toID)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return false, err
+		return 0, false, err
 	}
 
 	_, err = s.DB.Exec(`INSERT INTO friend_requests (from_user_id, to_user_id, created_at) VALUES (?,?,?)`,
 		fromID, toID, time.Now().Unix())
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
-	return false, nil
+	return toID, false, nil
 }
 
 // AcceptRequest turns a pending incoming request into a mutual friendship.
-func (s *Store) AcceptRequest(userID, requestID int64) error {
-	var fromID, toID int64
-	err := s.DB.QueryRow(`SELECT from_user_id, to_user_id FROM friend_requests WHERE id = ?`, requestID).Scan(&fromID, &toID)
+// It returns the requester's id so callers can notify them.
+func (s *Store) AcceptRequest(userID, requestID int64) (fromID int64, err error) {
+	var toID int64
+	err = s.DB.QueryRow(`SELECT from_user_id, to_user_id FROM friend_requests WHERE id = ?`, requestID).Scan(&fromID, &toID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrBadRequest
+		return 0, ErrBadRequest
 	}
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if toID != userID {
-		return ErrBadRequest // only the recipient may accept
+		return 0, ErrBadRequest // only the recipient may accept
 	}
-	return s.makeFriends(fromID, toID)
+	return fromID, s.makeFriends(fromID, toID)
 }
 
 // DeclineRequest removes a pending request. Works for the recipient (decline)

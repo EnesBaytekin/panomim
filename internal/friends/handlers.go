@@ -8,10 +8,12 @@ import (
 
 	"panomim/internal/auth"
 	"panomim/internal/httpx"
+	"panomim/internal/notifications"
 )
 
 type Handlers struct {
-	Store *Store
+	Store         *Store
+	Notifications *notifications.Store // per-user notifications, wired by server
 }
 
 // --- requests ---------------------------------------------------------------
@@ -48,7 +50,7 @@ func (h *Handlers) SendRequest(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, 400, "username required")
 		return
 	}
-	auto, err := h.Store.SendRequest(u.ID, req.Username)
+	targetID, auto, err := h.Store.SendRequest(u.ID, req.Username)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		httpx.Err(w, 404, "no such user")
@@ -66,6 +68,19 @@ func (h *Handlers) SendRequest(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, 500, "send request failed")
 		return
 	}
+	if h.Notifications != nil {
+		if auto {
+			// Reverse request already existed → their earlier request is accepted.
+			h.Notifications.Notify(notifications.Notification{
+				UserID: targetID, Type: notifications.TypeFriendAccept, ActorID: u.ID,
+			})
+			h.Notifications.DismissFriendRequest(u.ID, targetID)
+		} else {
+			h.Notifications.Notify(notifications.Notification{
+				UserID: targetID, Type: notifications.TypeFriendRequest, ActorID: u.ID,
+			})
+		}
+	}
 	httpx.JSON(w, 200, map[string]any{"ok": true, "autoAccepted": auto})
 }
 
@@ -76,13 +91,20 @@ func (h *Handlers) AcceptRequest(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, 400, "invalid request id")
 		return
 	}
-	if err := h.Store.AcceptRequest(u.ID, id); err != nil {
+	fromID, err := h.Store.AcceptRequest(u.ID, id)
+	if err != nil {
 		if errors.Is(err, ErrBadRequest) {
 			httpx.Err(w, 404, "request not found")
 			return
 		}
 		httpx.Err(w, 500, "accept failed")
 		return
+	}
+	if h.Notifications != nil {
+		h.Notifications.Notify(notifications.Notification{
+			UserID: fromID, Type: notifications.TypeFriendAccept, ActorID: u.ID,
+		})
+		h.Notifications.DismissFriendRequest(u.ID, fromID)
 	}
 	httpx.JSON(w, 200, map[string]bool{"ok": true})
 }

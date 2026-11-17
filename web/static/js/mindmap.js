@@ -535,7 +535,7 @@ function onWheel(e) {
 }
 
 function zoomAt(cx, cy, factor) {
-  const nz = clamp(zoom * factor, 0.15, 3);
+  const nz = clamp(zoom * factor, 0.05, 3);
   const vp = viewport.getBoundingClientRect();
   const mx = cx - vp.left, my = cy - vp.top;
   pan.x = mx - (mx - pan.x) * (nz / zoom);
@@ -598,7 +598,7 @@ function applyPinch() {
       wy: (mid.y - vp.top - pan.y) / zoom,
     };
   }
-  const nz = clamp(pinch.zoom * (dist / pinch.dist), 0.15, 3);
+  const nz = clamp(pinch.zoom * (dist / pinch.dist), 0.05, 3);
   pan.x = (mid.x - vp.left) - pinch.wx * nz;
   pan.y = (mid.y - vp.top) - pinch.wy * nz;
   zoom = nz;
@@ -823,15 +823,8 @@ function startRelink(e, node) {
   };
   const onUp = async () => {
     cleanup();
+    if (target == null) return; // dropped on empty space → keep parent as-is
     const before = { parentId: node.parentId ?? 0 };
-    if (target == null) {
-      // dropped on empty board → make root
-      try {
-        pushAction(patchAction(node.id, before, { parentId: 0 }));
-        mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: 0 }));
-      } catch (err) { toast(err.message, 'error'); }
-      return;
-    }
     try {
       pushAction(patchAction(node.id, before, { parentId: target }));
       mergeNode(await api.patch(`/api/nodes/${node.id}`, { parentId: target }));

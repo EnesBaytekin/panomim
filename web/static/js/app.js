@@ -6,6 +6,7 @@ import { initListView } from './listview.js';
 import * as mm from './mindmap.js';
 import { connectBoard, disconnect, resync } from './ws.js';
 import { openFriends } from './friends.js';
+import { bellButton, initNotifications } from './notifications.js';
 import { undo, redo, canUndo, canRedo, resetUndo } from './undo.js';
 import { t, toggleTheme, toggleLang, currentTheme, getLang } from './i18n.js';
 
@@ -28,6 +29,7 @@ export async function renderApp(container) {
   buildShell();
   wireStore();
   await loadBoards();
+  initNotifications();
   refreshFriendBadge();
   if (friendBadgeTimer) clearInterval(friendBadgeTimer);
   friendBadgeTimer = setInterval(refreshFriendBadge, 30000);
@@ -115,10 +117,10 @@ function buildShell() {
 
   contentEl = el('main.content',
     el('header.content-head',
-      el('button.hamburger', { onclick: toggleDrawer, 'aria-label': t('app.menu') }, '☰'),
+      el('button.hamburger', { onclick: toggleSidebar, 'aria-label': t('app.menu') }, '☰'),
       boardTitleEl,
       boardMenuBtn,
-      presenceEl,
+      el('div.content-head-right', bellButton(), presenceEl),
     ),
     tabBarEl,
     el('div.views',
@@ -306,16 +308,40 @@ function renderBoardList() {
 }
 
 function boardItem(b, currentId) {
+  const isMine = b.role === 'owner';
   const item = el('button.board-item' + (b.id === currentId ? '.active' : ''), {
     onclick: () => { openBoard(b.id); closeDrawer(); },
-    title: b.name + (b.role !== 'owner' ? ` (${t('app.sharedBy', { name: b.ownerName })})` : ''),
+    title: b.name + (!isMine ? ` (${t('app.sharedBy', { name: b.ownerName })})` : ''),
   },
-    el('span.board-name', null, b.name),
+    el('span.board-main',
+      el('span.board-name', null, b.name),
+      !isMine && boardMemberLine(b),
+    ),
     boardChanged(b, currentId) && el('span.board-changed', { title: t('app.boardChanged') }),
-    b.role === 'owner' && b.sharedCount > 0 && el('span.share-badge', { title: t('app.sharedWithCount', { n: b.sharedCount }) }, '👥' + b.sharedCount),
-    b.role !== 'owner' && el('span.share-badge', { title: t('app.yourRole', { role: roleName(b.role) }) }, b.role === 'editor' ? '✎' : '👁'),
+    isMine && b.sharedCount > 0 && el('span.share-badge', { title: t('app.sharedWithCount', { n: b.sharedCount }) }, '👥' + b.sharedCount),
+    !isMine && el('span.share-badge', { title: t('app.yourRole', { role: roleName(b.role) }) }, b.role === 'editor' ? '✎' : '👁'),
   );
   return item;
+}
+
+/** For a shared board, show who shared it (owner) and who else is on it. */
+function boardMemberLine(b) {
+  const members = b.members || [];
+  const owner = members.find(m => m.role === 'owner') ||
+    (b.ownerName ? { userId: b.ownerId, username: b.ownerName, role: 'owner' } : null);
+  const others = members.filter(m => m.role !== 'owner' && m.userId !== store.user?.id);
+  const line = el('span.board-members',
+    owner && el('span.member-chip', null,
+      avatar({ userId: owner.userId, username: owner.username }, 'sm'),
+      el('span.member-name', null, owner.username),
+      el('span.member-role-dot', { title: t('common.role.owner') }, '👑'),
+    ),
+    others.map(m => el('span.member-chip', { title: m.username + ' · ' + roleName(m.role) },
+      avatar({ userId: m.userId, username: m.username }, 'sm'),
+      el('span.member-name', null, m.username),
+    )),
+  );
+  return line;
 }
 
 async function newBoard() {
@@ -1246,7 +1272,7 @@ function openShareDialog() {
           m.role === 'owner' && el('span.share-role', null, ''),
           m.role !== 'owner' && owner && el('select.input.small', {
             onchange: async e => {
-              try { await api.post(`/api/boards/${b.id}/share`, { username: m.username, role: e.target.value }); refreshMembers(); }
+              try { await api.patch(`/api/boards/${b.id}/members/${m.userId}`, { role: e.target.value }); refreshMembers(); }
               catch (err) { toast(err.message, 'error'); }
             },
           },
@@ -1280,7 +1306,7 @@ function openShareDialog() {
               userInput.value = '';
               refreshMembers();
               await loadBoards();
-              toast(t('app.memberAdded', { name: uname }), 'ok');
+              toast(t('friends.shareRequested', { board: b.name, friend: uname }), 'ok');
             } catch (err) { toast(err.message, 'error'); }
           },
         }, t('common.add')),
@@ -1297,6 +1323,11 @@ function openShareDialog() {
 
 // --- drawer (mobile) ---------------------------------------------------------------
 
+function toggleSidebar() {
+  // desktop: collapse/expand the fixed sidebar; mobile: slide-in drawer
+  if (window.matchMedia('(max-width: 900px)').matches) toggleDrawer();
+  else root.classList.toggle('nav-collapsed');
+}
 function toggleDrawer() {
   sidebarEl.classList.toggle('open');
   drawerOverlay.classList.toggle('show');
@@ -1319,4 +1350,6 @@ function wireStore() {
   on('open-board', id => openBoard(id));
   // friend requests/friends changed → refresh the sidebar badge
   on('friends-changed', () => refreshFriendBadge());
+  // a board share was accepted → the "shared with me" list changed
+  on('boards-changed', () => loadBoards(true));
 }

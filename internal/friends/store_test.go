@@ -37,7 +37,7 @@ func TestRequestAcceptFlow(t *testing.T) {
 	s := testSetup(t)
 	alice, bob := userID(t, s, "alice"), userID(t, s, "bob")
 
-	auto, err := s.SendRequest(alice, "bob")
+	_, auto, err := s.SendRequest(alice, "bob")
 	if err != nil || auto {
 		t.Fatalf("send: auto=%v err=%v", auto, err)
 	}
@@ -60,11 +60,11 @@ func TestRequestAcceptFlow(t *testing.T) {
 	}
 
 	// accepting duplicates must fail (alice can't accept bob's incoming — she has none)
-	if err := s.AcceptRequest(alice, bobInID); err == nil {
+	if _, err := s.AcceptRequest(alice, bobInID); err == nil {
 		t.Fatal("alice must not be able to accept bob's request")
 	}
 
-	if err := s.AcceptRequest(bob, bobInID); err != nil {
+	if _, err := s.AcceptRequest(bob, bobInID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,11 +83,11 @@ func TestSendRequestMutualAutoAccept(t *testing.T) {
 	s := testSetup(t)
 	alice, bob := userID(t, s, "alice"), userID(t, s, "bob")
 
-	if _, err := s.SendRequest(alice, "bob"); err != nil {
+	if _, _, err := s.SendRequest(alice, "bob"); err != nil {
 		t.Fatal(err)
 	}
 	// bob sending back to alice auto-accepts (mutual add)
-	auto, err := s.SendRequest(bob, "alice")
+	_, auto, err := s.SendRequest(bob, "alice")
 	if err != nil || !auto {
 		t.Fatalf("reverse send: auto=%v err=%v", auto, err)
 	}
@@ -105,16 +105,16 @@ func TestSendRequestEdgeCases(t *testing.T) {
 	s := testSetup(t)
 	alice := userID(t, s, "alice")
 
-	if _, err := s.SendRequest(alice, "alice"); !errors.Is(err, ErrSelf) {
+	if _, _, err := s.SendRequest(alice, "alice"); !errors.Is(err, ErrSelf) {
 		t.Fatalf("self: %v", err)
 	}
-	if _, err := s.SendRequest(alice, "nobody"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := s.SendRequest(alice, "nobody"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
-	if _, err := s.SendRequest(alice, "bob"); err != nil {
+	if _, _, err := s.SendRequest(alice, "bob"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SendRequest(alice, "bob"); !errors.Is(err, ErrPending) {
+	if _, _, err := s.SendRequest(alice, "bob"); !errors.Is(err, ErrPending) {
 		t.Fatalf("duplicate: %v", err)
 	}
 }
@@ -123,7 +123,7 @@ func TestDeclineRequest(t *testing.T) {
 	s := testSetup(t)
 	alice, bob := userID(t, s, "alice"), userID(t, s, "bob")
 
-	if _, err := s.SendRequest(alice, "bob"); err != nil {
+	if _, _, err := s.SendRequest(alice, "bob"); err != nil {
 		t.Fatal(err)
 	}
 	in, _, _ := s.ListRequests(bob)
@@ -156,11 +156,11 @@ func TestSharedBoards(t *testing.T) {
 	}
 
 	// become friends
-	if _, err := s.SendRequest(alice, "bob"); err != nil {
+	if _, _, err := s.SendRequest(alice, "bob"); err != nil {
 		t.Fatal(err)
 	}
 	in, _, _ := s.ListRequests(bob)
-	if err := s.AcceptRequest(bob, in[0].ID); err != nil {
+	if _, err := s.AcceptRequest(bob, in[0].ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -196,11 +196,11 @@ func TestRemoveFriend(t *testing.T) {
 	}
 
 	// become friends, then remove from alice's side
-	if _, err := s.SendRequest(alice, "bob"); err != nil {
+	if _, _, err := s.SendRequest(alice, "bob"); err != nil {
 		t.Fatal(err)
 	}
 	in, _, _ := s.ListRequests(bob)
-	if err := s.AcceptRequest(bob, in[0].ID); err != nil {
+	if _, err := s.AcceptRequest(bob, in[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	if ok, _ := s.areFriends(alice, bob); !ok {

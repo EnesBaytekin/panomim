@@ -300,7 +300,7 @@ function showShareRole(body, overlay, friend, board) {
       onclick: async () => {
         try {
           await api.post(`/api/boards/${board.id}/share`, { username: friend.username, role: roleSel.value });
-          toast(t('friends.shared', { board: board.name, friend: friend.username }), 'ok');
+          toast(t('friends.shareRequested', { board: board.name, friend: friend.username }), 'ok');
           showFriend(body, overlay, friend);
         } catch (e) { toast(e.message, 'error'); }
       },

@@ -118,6 +118,9 @@ function handle(msg) {
     case 'members_changed':
       refreshBoard(msg.id);
       break;
+    case 'notification':
+      if (msg.notification) emit('notification', msg.notification);
+      break;
     case 'select': {
       if (msg.userId === api.user?.id) break;
       const nodeId = msg.nodeId == null ? null : Number(msg.nodeId);
